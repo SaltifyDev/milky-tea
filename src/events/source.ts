@@ -161,15 +161,15 @@ export async function handleSseResponse(res: Response): Promise<MilkyEventSource
 export type MilkyEventSourceTransport = EventSource | WebSocket | Response
 
 export async function handleRawEventSource(source: MilkyEventSourceTransport): Promise<MilkyEventSource> {
-  if (source instanceof EventSource) {
+  if (globalThis.EventSource && source instanceof EventSource) {
     return handleWebSocketOrEventSource(source)
   }
 
-  if (source instanceof WebSocket) {
+  if (globalThis.WebSocket && source instanceof WebSocket) {
     return handleWebSocketOrEventSource(source)
   }
 
-  if (source instanceof Response) {
+  if (globalThis.Response && source instanceof Response) {
     return handleSseResponse(source)
   }
 
