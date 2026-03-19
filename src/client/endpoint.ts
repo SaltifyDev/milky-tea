@@ -1,12 +1,24 @@
-import type { MilkyFetch, MilkyFetchCreateOptions, MilkyFetchOptions } from 'src/client/fetch'
+import type { MilkyFetch, MilkyFetchCreateOptions, MilkyFetchOptions } from '@/client/fetch'
+import type { MilkyEventSource, MilkyEventSourceOptions } from '@/events'
+import type { MilkyEventSourceConnectionKind } from '@/events/source'
 import type { MilkyClientEndpointNames, MilkyRawEndpoints } from '@/gen/types'
-import { createMilkyFetch } from 'src/client/fetch'
+import { createMilkyFetch } from '@/client/fetch'
+import { createMilkyEventSource } from '@/events'
 import { clientEndpointNames } from '@/gen/types'
 
-function createProxy(fetch: MilkyFetch): any {
+function createProxy(options: MilkyFetchCreateOptions): any {
+  const milkyFetch = createMilkyFetch(options)
+  const event = (kind: MilkyEventSourceConnectionKind, eventOptions?: MilkyEventSourceOptions) =>
+    createMilkyEventSource(kind, {
+      ...eventOptions,
+      baseURL: options.baseURL,
+      token: eventOptions?.token ?? options.token,
+    })
+
   const cachedEndpoints = new Map<keyof MilkyClientEndpointNames, any>()
   return new Proxy({
-    fetch,
+    fetch: milkyFetch,
+    event,
   }, {
     get(target, prop) {
       if (!Object.hasOwn(clientEndpointNames, prop)) {
@@ -34,7 +46,7 @@ function createProxy(fetch: MilkyFetch): any {
           }
 
           const methodName = methodNames[key as any]
-          const methodFn = (param: any, options: any) => fetch(methodName, param, options)
+          const methodFn = (param: any, override: any) => milkyFetch(methodName, param, override)
           cachedMethods.set(key, methodFn)
           return methodFn
         },
@@ -54,6 +66,7 @@ function createProxy(fetch: MilkyFetch): any {
 
 export type MilkyClient = {
   readonly fetch: MilkyFetch
+  readonly event: (kind: MilkyEventSourceConnectionKind, options?: MilkyEventSourceOptions) => Promise<MilkyEventSource>
 } & {
   readonly [K in keyof MilkyClientEndpointNames]: {
     readonly [M in keyof MilkyClientEndpointNames[K]]:
@@ -66,5 +79,5 @@ export type MilkyClient = {
 } & {}
 
 export function createMilkyClient(options: MilkyFetchCreateOptions): MilkyClient {
-  return createProxy(createMilkyFetch(options))
+  return createProxy(options)
 }

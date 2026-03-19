@@ -1,176 +1,166 @@
-import type { MilkyEventSource } from '@/events/internal'
-import { createEventEmitter } from '@/utils'
+/* eslint-disable ts/no-use-before-define */
+import type { MilkyEventSource, MilkyEventSourceController, MilkyEventSourceTerminate } from '@/events/internal'
+import { MilkyEventSourceImpl } from '@/events/internal'
 
-export async function handleWebSocketOrEventSource(source: EventSource | WebSocket): Promise<MilkyEventSource> {
-  const emitter = createEventEmitter() as MilkyEventSource
+export type MilkyEventSourceConnectionKind = 'auto' | 'sse' | 'websocket'
+export type MilkyResolvedEventSourceConnectionKind = Exclude<MilkyEventSourceConnectionKind, 'auto'>
+export type MilkyEventSourceTransport = EventSource | WebSocket
 
-  source.addEventListener('open', () => emitter.emit('open'), { once: true })
-  source.addEventListener('message', event => emitter.emit('push', JSON.parse((event as MessageEvent).data.toString())))
-  source.addEventListener('error', error => emitter.emit('error', error))
-  source.addEventListener('close', () => emitter.emit('close'), { once: true })
+export type MilkyEventSourceTermination
+  = | { type: 'closed' }
+    | { type: 'ended' }
+    | { type: 'error', error: unknown, reported: boolean }
 
-  if (source.readyState === source.OPEN) {
-    Promise.resolve().then(() => emitter.emit('open'))
-  }
-
-  emitter.close = source.close.bind(source)
-
-  return emitter
+export interface MilkyEventSourceConnection {
+  readonly kind: MilkyResolvedEventSourceConnectionKind
+  readonly source: MilkyEventSource
+  readonly termination: Promise<MilkyEventSourceTermination>
 }
 
-export async function handleSseResponse(res: Response): Promise<MilkyEventSource> {
-  if (!res.ok) {
-    throw new Error(`milky: sse failed to create event source: ${res.statusText}`)
+function createTransportConnection(
+  kind: MilkyResolvedEventSourceConnectionKind,
+  setup: (controller: MilkyEventSourceController, finish: MilkyEventSourceTerminate<MilkyEventSourceTermination>) => void,
+): MilkyEventSourceConnection {
+  let termination!: Promise<MilkyEventSourceTermination>
+
+  const source = new MilkyEventSourceImpl((controller) => {
+    const finish = controller.createTerminate<MilkyEventSourceTermination>()
+    termination = finish.promise
+    setup(controller, finish)
+  })
+
+  return {
+    kind,
+    source,
+    termination,
   }
+}
 
-  if (!res.headers.get('content-type')?.includes('text/event-stream')) {
-    throw new Error(`milky: sse failed to create event source: invalid content type: ${res.headers.get('Content-Type')}`)
-  }
+function isEventSourceTransport(source: MilkyEventSourceTransport): source is EventSource {
+  return !!globalThis.EventSource && source instanceof globalThis.EventSource
+}
 
-  if (!res.body) {
-    throw new Error('milky: sse failed to get body')
-  }
-
-  let readerClosed = false
-  const decoder = res.body.pipeThrough(new TextDecoderStream())
-  const reader = decoder.getReader()
-  const emitter = createEventEmitter() as MilkyEventSource
-
-  emitter.close = () => {
-    if (!readerClosed) {
-      readerClosed = true
-      void reader.cancel()
-    }
-  }
-
-  let buffer = ''
-  let shouldCapture = false
-  const dataLines: string[] = []
-
-  function emitPendingEvent() {
-    if (!dataLines.length) {
-      return
-    }
-    emitter.emit('push', JSON.parse(dataLines.join('\n')))
-    dataLines.length = 0
-  }
-
-  function handleLine(line: string) {
-    if (!line.length) {
-      shouldCapture = false
-      emitPendingEvent()
-      return
+export async function connectWebSocket(source: WebSocket): Promise<MilkyEventSourceConnection> {
+  return createTransportConnection('websocket', (controller, finish) => {
+    const cleanup = () => {
+      source.removeEventListener('open', onOpen)
+      source.removeEventListener('message', onMessage)
+      source.removeEventListener('error', onError)
+      source.removeEventListener('close', onClose)
     }
 
-    if (line.startsWith(':')) {
-      return
+    const onOpen = () => {
+      controller.dispatchOpen()
     }
 
-    const separatorIndex = line.indexOf(':')
-
-    if (separatorIndex === -1) {
-      return
-    }
-
-    const field = line.slice(0, separatorIndex)
-    const value = line.slice(separatorIndex + 1).trimStart()
-
-    if (field === 'event') {
-      shouldCapture = value === 'milky_event'
-      return
-    }
-
-    if (shouldCapture && field === 'data') {
-      dataLines.push(value)
-    }
-  }
-
-  function consume(flush = false) {
-    let lineStart = 0
-    let cursor = 0
-
-    while (cursor < buffer.length) {
-      const char = buffer[cursor]
-
-      if (char !== '\r' && char !== '\n') {
-        cursor += 1
-        continue
+    const onMessage = (event: MessageEvent) => {
+      try {
+        controller.dispatchMessage(JSON.parse(event.data.toString()))
       }
-
-      if (char === '\r' && cursor + 1 === buffer.length && !flush) {
-        break
+      catch (error) {
+        controller.dispatchError(error)
       }
-
-      handleLine(buffer.slice(lineStart, cursor))
-
-      if (char === '\r' && buffer[cursor + 1] === '\n') {
-        cursor += 1
-      }
-
-      cursor += 1
-      lineStart = cursor
     }
 
-    if (flush) {
-      if (lineStart < buffer.length) {
-        handleLine(buffer.slice(lineStart))
-      }
-      buffer = ''
-      return
+    const onError = (event: Event) => {
+      controller.dispatchError(event)
     }
 
-    buffer = buffer.slice(lineStart)
-  }
+    const onClose = () => {
+      cleanup()
+      finish({ type: 'ended' })
+    }
 
-  void (async () => {
-    Promise.resolve().then(() => emitter.emit('open'))
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read()
-
-        if (done) {
-          break
-        }
-
-        buffer += value
-        consume()
-      }
-
-      if (readerClosed) {
+    controller.setCloseHandler(() => {
+      cleanup()
+      if (source.readyState === source.CLOSING || source.readyState === source.CLOSED) {
+        finish({ type: 'closed' })
         return
       }
 
-      consume(true)
-      emitPendingEvent()
-      emitter.emit('close')
-    }
-    catch (error) {
-      if (!readerClosed) {
-        emitter.emit('error', error)
-      }
-    }
-    finally {
-      reader.releaseLock()
-    }
-  })()
+      source.close()
+    })
 
-  return emitter
+    source.addEventListener('open', onOpen)
+    source.addEventListener('message', onMessage)
+    source.addEventListener('error', onError)
+    source.addEventListener('close', onClose, { once: true })
+
+    if (source.readyState === source.OPEN) {
+      queueMicrotask(() => controller.dispatchOpen())
+    }
+
+    if (source.readyState === source.CLOSED) {
+      queueMicrotask(() => {
+        cleanup()
+        finish({ type: 'ended' })
+      })
+    }
+  })
 }
 
-export type MilkyEventSourceTransport = EventSource | WebSocket | Response
+export async function connectEventSource(source: EventSource): Promise<MilkyEventSourceConnection> {
+  return createTransportConnection('sse', (controller, finish) => {
+    let closedByUser = false
 
-export async function handleRawEventSource(source: MilkyEventSourceTransport): Promise<MilkyEventSource> {
-  if (globalThis.EventSource && source instanceof EventSource) {
-    return handleWebSocketOrEventSource(source)
-  }
+    const cleanup = () => {
+      source.removeEventListener('open', onOpen)
+      source.removeEventListener('milky_event', onMessage)
+      source.removeEventListener('error', onError)
+    }
 
+    const onOpen = () => {
+      controller.dispatchOpen()
+    }
+
+    const onMessage = (event: Event) => {
+      const messageEvent = event as MessageEvent<string>
+      try {
+        controller.dispatchMessage(JSON.parse(messageEvent.data))
+      }
+      catch (error) {
+        controller.dispatchError(error)
+      }
+    }
+
+    const onError = (event: Event) => {
+      if (closedByUser) {
+        return
+      }
+
+      controller.markConnecting()
+      controller.dispatchError(event)
+
+      if (source.readyState === source.CLOSED) {
+        cleanup()
+        finish({ type: 'error', error: event, reported: true })
+      }
+    }
+
+    controller.setCloseHandler(() => {
+      closedByUser = true
+      cleanup()
+      source.close()
+      finish({ type: 'closed' })
+    })
+
+    source.addEventListener('open', onOpen)
+    source.addEventListener('milky_event', onMessage)
+    source.addEventListener('error', onError)
+
+    if (source.readyState === source.OPEN) {
+      queueMicrotask(() => controller.dispatchOpen())
+    }
+  })
+}
+
+export async function connectEventTransport(source: MilkyEventSourceTransport): Promise<MilkyEventSourceConnection> {
   if (globalThis.WebSocket && source instanceof WebSocket) {
-    return handleWebSocketOrEventSource(source)
+    return connectWebSocket(source)
   }
 
-  if (globalThis.Response && source instanceof Response) {
-    return handleSseResponse(source)
+  if (isEventSourceTransport(source) || !globalThis.EventSource) {
+    return connectEventSource(source as EventSource)
   }
 
   throw new TypeError('milky: unknown event source type')

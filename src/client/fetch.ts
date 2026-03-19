@@ -1,5 +1,5 @@
 import type { MilkyRawEndpoints } from '@/gen/types'
-import { milkyProto } from 'src/gen/proto'
+import { milkyProto } from '@/gen/proto'
 import { joinURL, withTimeout } from '@/utils'
 
 export interface MilkyFetchOptions {

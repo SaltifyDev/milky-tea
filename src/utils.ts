@@ -43,6 +43,49 @@ export function withTimeout<T>(p: Promise<T> | (() => Promise<T>), timeout?: num
   return Promise.race([p, promise]).finally(cancel)
 }
 
+export function raceWithAbort<T>(signal: AbortSignal | undefined, promise: Promise<T>, onAbort: () => void): Promise<T> {
+  if (!signal) {
+    return promise
+  }
+
+  if (signal.aborted) {
+    onAbort()
+    return Promise.reject(new Error('aborted'))
+  }
+
+  const abortDeferred = Promise.withResolvers<never>()
+  const abort = () => {
+    onAbort()
+    abortDeferred.reject(new Error('aborted'))
+  }
+
+  signal.addEventListener('abort', abort, { once: true })
+  return Promise.race([promise, abortDeferred.promise]).finally(() => {
+    signal.removeEventListener('abort', abort)
+  })
+}
+
+export function sleepWithAbort(signal: AbortSignal, ms: number): Promise<void> {
+  if (signal.aborted) {
+    return Promise.reject(new Error('milky: reconnect aborted'))
+  }
+
+  const deferred = Promise.withResolvers<void>()
+  let timer: ReturnType<typeof setTimeout>
+  const abort = () => {
+    clearTimeout(timer)
+    deferred.reject(new Error('milky: reconnect aborted'))
+  }
+
+  timer = setTimeout(() => {
+    signal.removeEventListener('abort', abort)
+    deferred.resolve()
+  }, ms)
+
+  signal.addEventListener('abort', abort, { once: true })
+  return deferred.promise
+}
+
 export function joinURL(baseURL: string | URL, endpoint: string): URL {
   const normalized = new URL(baseURL)
 

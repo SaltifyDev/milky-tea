@@ -1,10 +1,18 @@
-import type { MilkyEventSource, MilkyEventSourceEvents } from '@/events/internal'
-import type { MilkyEventSourceTransport } from '@/events/source'
-import type { Awaitable, WildcardHandler } from '@/utils'
-import { handleRawEventSource } from '@/events/source'
-import { createEventEmitter, withTimeout } from '@/utils'
+/* eslint-disable ts/no-use-before-define */
+import type { MilkyEventSource, MilkyEventSourceController, MilkyEventSourceEventMap } from '@/events/internal'
+import type {
+  MilkyEventSourceConnection,
+  MilkyEventSourceConnectionKind,
+  MilkyEventSourceTransport,
+  MilkyResolvedEventSourceConnectionKind,
+} from '@/events/source'
+import type { Awaitable } from '@/utils'
+import { MilkyEventSourceImpl } from '@/events/internal'
+import { connectEventTransport } from '@/events/source'
+import { joinURL, raceWithAbort, sleepWithAbort, withTimeout } from '@/utils'
 
 export interface MilkyEventSourceOptions {
+  token?: string
   timeout?: number
   reconnect?: false | {
     interval: number
@@ -12,169 +20,274 @@ export interface MilkyEventSourceOptions {
   }
 }
 
-export type MilkyEventSourceTransportFactory = (signal?: AbortSignal) => Awaitable<MilkyEventSourceTransport>
+export interface MilkyEventSourceCreateOptions extends MilkyEventSourceOptions {
+  baseURL: string | URL
+}
 
-export async function createMilkyEventSource(factory: MilkyEventSourceTransportFactory, options?: MilkyEventSourceOptions): Promise<MilkyEventSource> {
-  options ??= {}
-  options.timeout ??= 15000
-  options.reconnect ??= false
+export type MilkyEventSourceTransportFactory = (
+  options: MilkyEventSourceOptions,
+  signal?: AbortSignal,
+) => Awaitable<MilkyEventSourceTransport>
 
-  const reconnect = options?.reconnect
-  const handleTransport = async (signal?: AbortSignal) => handleRawEventSource(await factory(signal))
+let eventSourceConstructorPromise: Promise<typeof EventSource> | undefined
 
-  async function connect(signal?: AbortSignal): Promise<MilkyEventSource> {
-    const controller = new AbortController()
-    let shouldCloseTransport = false
-    let onAbort: (() => void) | undefined
-    let abortPromise: Promise<never> | undefined
-    let rejectAbort: ((error: Error) => void) | undefined
+async function resolveEventSourceConstructor(): Promise<typeof EventSource> {
+  if (globalThis.EventSource) {
+    return globalThis.EventSource
+  }
 
-    if (signal) {
-      abortPromise = new Promise((_, reject) => {
-        rejectAbort = reject
-      })
-      onAbort = () => {
-        shouldCloseTransport = true
-        controller.abort()
-        rejectAbort?.(new Error('aborted'))
-      }
-      signal.addEventListener('abort', onAbort, { once: true })
+  eventSourceConstructorPromise ??= import('eventsource')
+    .then(module => module.EventSource as unknown as typeof EventSource)
+    .catch((error) => {
+      eventSourceConstructorPromise = undefined
+      throw new TypeError('milky: EventSource is not available in current runtime, install optional peer dependency "eventsource" to enable sse', { cause: error })
+    })
+
+  return eventSourceConstructorPromise
+}
+
+async function createTransportByKind(
+  kind: MilkyResolvedEventSourceConnectionKind,
+  options: MilkyEventSourceCreateOptions,
+): Promise<MilkyEventSourceTransport> {
+  const url = joinURL(options.baseURL, '/events')
+
+  if (options.token) {
+    url.searchParams.set('token', options.token)
+  }
+
+  switch (kind) {
+    case 'sse':
+      return new (await resolveEventSourceConstructor())(url)
+    case 'websocket':
+      return new WebSocket(url)
+    default:
+      throw new TypeError(`milky: unknown event source kind: ${String(kind)}`)
+  }
+}
+
+async function waitForWebSocketOpen(
+  connection: MilkyEventSourceConnection,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (connection.kind !== 'websocket') {
+    return true
+  }
+
+  if (connection.source.readyState === connection.source.OPEN) {
+    return true
+  }
+
+  if (connection.source.readyState === connection.source.CLOSED) {
+    return false
+  }
+
+  const deferred = Promise.withResolvers<boolean>()
+  let settled = false
+  const finish = (result: boolean) => {
+    if (settled) {
+      return
     }
 
+    settled = true
+    connection.source.removeEventListener('open', onOpen)
+    connection.source.removeEventListener('error', onError)
+    deferred.resolve(result)
+  }
+  const onOpen = () => {
+    finish(true)
+  }
+  const onError = () => {
+    finish(false)
+  }
+
+  connection.source.addEventListener('open', onOpen, { once: true })
+  connection.source.addEventListener('error', onError, { once: true })
+  void connection.termination.then(() => {
+    finish(false)
+  })
+
+  return raceWithAbort(signal, deferred.promise, () => {
+    connection.source.close()
+    finish(false)
+  })
+}
+
+async function createConnectionByKind(
+  kind: MilkyEventSourceConnectionKind,
+  options: MilkyEventSourceCreateOptions,
+  signal: AbortSignal,
+): Promise<MilkyEventSourceConnection> {
+  if (kind !== 'auto') {
+    return connectEventTransport(await createTransportByKind(kind, options))
+  }
+
+  let websocketConnection: MilkyEventSourceConnection | undefined
+
+  try {
+    websocketConnection = await connectEventTransport(await createTransportByKind('websocket', options))
+
+    if (await waitForWebSocketOpen(websocketConnection, signal)) {
+      return websocketConnection
+    }
+  }
+  catch (error) {
+    if (signal.aborted) {
+      throw error
+    }
+  }
+
+  websocketConnection?.source.close()
+  return connectEventTransport(await createTransportByKind('sse', options))
+}
+
+function createDisconnectError(): Error {
+  return new Error('milky: event source disconnected')
+}
+
+export async function createMilkyEventSource(factory: MilkyEventSourceTransportFactory, options?: MilkyEventSourceOptions): Promise<MilkyEventSource>
+export async function createMilkyEventSource(
+  kind: MilkyEventSourceConnectionKind,
+  options: MilkyEventSourceCreateOptions,
+): Promise<MilkyEventSource>
+export async function createMilkyEventSource(
+  kindOrFactory: MilkyEventSourceConnectionKind | MilkyEventSourceTransportFactory,
+  options?: MilkyEventSourceCreateOptions | MilkyEventSourceOptions,
+): Promise<MilkyEventSource> {
+  if (typeof kindOrFactory !== 'function' && (options == null || !('baseURL' in options))) {
+    throw new TypeError('milky: baseURL is required when creating event sources by kind')
+  }
+
+  const timeout = options?.timeout ?? 15000
+  const reconnect = options?.reconnect ?? false
+  const eventOptions = options ?? {}
+
+  async function connect(signal?: AbortSignal): Promise<MilkyEventSourceConnection> {
+    const controller = new AbortController()
+    let shouldCloseTransport = false
+
     try {
-      const transportPromise = handleTransport(controller.signal)
-      transportPromise.then((transport) => {
+      const connectionPromise = typeof kindOrFactory === 'function'
+        ? Promise.resolve(kindOrFactory(eventOptions, controller.signal)).then(connectEventTransport)
+        : createConnectionByKind(kindOrFactory, options as MilkyEventSourceCreateOptions, controller.signal)
+      connectionPromise.then((connection) => {
         if (shouldCloseTransport || controller.signal.aborted) {
-          transport.close()
+          connection.source.close()
         }
       }, () => {})
 
-      const pending = withTimeout(transportPromise, options?.timeout, () => {
+      const pending = withTimeout(connectionPromise, timeout, () => {
         shouldCloseTransport = true
         controller.abort()
       })
 
-      return await (abortPromise ? Promise.race([pending, abortPromise]) : pending)
+      return await raceWithAbort(signal, pending, () => {
+        shouldCloseTransport = true
+        controller.abort()
+      })
     }
     catch (error) {
       shouldCloseTransport = true
       controller.abort()
       throw error
     }
-    finally {
-      if (onAbort) {
-        signal?.removeEventListener('abort', onAbort)
-      }
-    }
   }
 
   if (!reconnect) {
-    return await connect()
+    return (await connect()).source
   }
 
   const controller = new AbortController()
   const { signal } = controller
-  const emitter = createEventEmitter() as MilkyEventSource
-  let retries = 0
-  let hasConnected = false
-  let closedSinceLastOpen = false
-
-  emitter.close = () => {
-    controller.abort()
-  }
+  let currentConnection: MilkyEventSourceConnection | undefined
+  let controllerState!: MilkyEventSourceController
+  const emitter = new MilkyEventSourceImpl((state) => {
+    controllerState = state
+    controllerState.setCloseHandler(() => {
+      controller.abort()
+      currentConnection?.source.close()
+    })
+  })
 
   void (async () => {
+    let attempts = 0
+
     while (!signal.aborted) {
+      let connection: MilkyEventSourceConnection | undefined
+
       try {
-        const transport = await connect(signal)
+        connection = await connect(signal)
+        currentConnection = connection
 
         if (signal.aborted) {
-          transport.close()
+          connection.source.close()
           break
         }
 
-        await new Promise<void>((resolve) => {
-          let forward: WildcardHandler<MilkyEventSourceEvents>
-          let onAbort: () => void
+        if (connection.kind === 'sse') {
+          const stopForwarding = controllerState.forwardFrom(connection.source)
+          const termination = await connection.termination
+          stopForwarding()
+          currentConnection = undefined
 
-          const cleanup = () => {
-            transport.off('*', forward)
-            signal.removeEventListener('abort', onAbort)
-            resolve()
+          if (termination.type === 'error' && !termination.reported) {
+            controllerState.dispatchError(termination.error)
           }
 
-          onAbort = () => {
-            transport.close()
-            cleanup()
-          }
-
-          forward = (event, data) => {
-            if (event === 'open') {
-              retries = 0
-              closedSinceLastOpen = false
-              emitter.emit(hasConnected ? 'reopen' : 'open')
-              hasConnected = true
-              return
-            }
-
-            if (event === 'close' || event === 'error') {
-              if (event === 'close') {
-                closedSinceLastOpen = true
-              }
-              cleanup()
-
-              if (event === 'error') {
-                transport.close()
-              }
-            }
-
-            emitter.emit(event, data)
-          }
-
-          signal.addEventListener('abort', onAbort)
-          transport.on('*', forward)
-        })
-
-        if (signal.aborted) {
           break
+        }
+
+        const stopForwarding = controllerState.forwardFrom(connection.source)
+        const termination = await connection.termination
+        stopForwarding()
+        currentConnection = undefined
+
+        if (signal.aborted || termination.type === 'closed') {
+          break
+        }
+
+        controllerState.markConnecting()
+
+        if (termination.type === 'ended') {
+          controllerState.dispatchError(createDisconnectError())
+        }
+        else if (!termination.reported) {
+          controllerState.dispatchError(termination.error)
         }
       }
       catch (error) {
+        currentConnection = undefined
+
         if (signal.aborted) {
           break
         }
 
-        emitter.emit('error', error)
+        controllerState.markConnecting()
+        controllerState.dispatchError(error)
       }
 
-      if (reconnect.attempts !== 'always' && retries >= reconnect.attempts) {
+      if (signal.aborted) {
         break
       }
 
-      retries += 1
+      if (reconnect.attempts !== 'always' && attempts >= reconnect.attempts) {
+        break
+      }
+
+      attempts += 1
 
       try {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, reconnect.interval)
-          signal.addEventListener('abort', () => {
-            clearTimeout(timer)
-            reject(new Error('milky: reconnect aborted'))
-          }, { once: true })
-        })
+        await sleepWithAbort(signal, reconnect.interval)
       }
       catch {
         break
       }
     }
 
-    if (!closedSinceLastOpen) {
-      emitter.emit('close')
-    }
+    controllerState.markClosed()
   })()
 
   return emitter
 }
 
-export const toMilkyEventSource = createMilkyEventSource
-
-export type { MilkyEventSource, MilkyEventSourceEvents, MilkyEventSourceTransport }
+export type { MilkyEventSource, MilkyEventSourceEventMap, MilkyEventSourceTransport }
