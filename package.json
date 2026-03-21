@@ -14,6 +14,10 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.com"
+  },
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
