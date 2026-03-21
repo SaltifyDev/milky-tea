@@ -1,4 +1,4 @@
-# @saltify/milky-tea
+# @milky-tea/client
 
 [![CI](https://github.com/SaltifyDev/milky-ts/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SaltifyDev/milky-ts/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FSaltifyDev%2Fmilky-ts%2Fbadges%2Fcoverage-badge.json)](https://github.com/SaltifyDev/milky-ts/actions/workflows/ci.yml)
@@ -8,7 +8,7 @@ Milky 的 TypeScript SDK，提供类型安全的 API 调用和事件流支持。
 ## 安装
 
 ```bash
-npm i @saltify/milky-tea
+npm i @milky-tea/client @saltify/milky-types
 ```
 
 如果运行环境不支持 EventSource（例如 Node.js 环境）且需要 SSE 支持，则需要安装 `eventsource`：
@@ -24,7 +24,7 @@ npm i eventsource
 下面是一个使用 `createMilkyClient` 创建客户端并调用 API 的示例：
 
 ```ts
-import { createMilkyClient } from '@saltify/milky-tea'
+import { createMilkyClient } from '@milky-tea/client'
 
 const client = createMilkyClient({
   baseURL: 'https://milky.example.com',
@@ -85,7 +85,7 @@ source.close()
 `createMilkyFetch` 提供了一个更底层的 fetch 封装，允许直接调用原始的 API endpoint。
 
 ```ts
-import { createMilkyFetch } from '@saltify/milky-tea'
+import { createMilkyFetch } from '@milky-tea/client'
 
 const milkyFetch = createMilkyFetch({
   baseURL: 'https://milky.example.com',
