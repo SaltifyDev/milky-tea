@@ -242,6 +242,43 @@ it('forwards auto event configuration through the client wrapper', async () => {
   source.close()
 })
 
+it('defaults client event kind to auto when omitted', async () => {
+  const websocketUrls: string[] = []
+  const sseUrls: string[] = []
+
+  globalThis.WebSocket = class extends FakeWebSocket {
+    constructor(url: string | URL) {
+      super(url)
+      websocketUrls.push(String(url))
+      queueMicrotask(() => {
+        this.dispatchEvent(new Event('error'))
+        this.close()
+      })
+    }
+  } as unknown as typeof WebSocket
+
+  globalThis.EventSource = class extends FakeEventSource {
+    constructor(url: string | URL) {
+      super(url)
+      sseUrls.push(String(url))
+    }
+  } as unknown as typeof EventSource
+
+  const client = createMilkyClient({
+    baseURL: 'https://example.com/base',
+    token: 'root-token',
+    fetch: vi.fn(),
+  })
+
+  const source = client.event()
+
+  await waitFor(() => websocketUrls.length === 1 && sseUrls.length === 1)
+  expect(websocketUrls).toEqual(['https://example.com/event?token=root-token'])
+  expect(sseUrls).toEqual(['https://example.com/event?token=root-token'])
+
+  source.close()
+})
+
 it('falls back to peer eventsource when global EventSource is unavailable', async () => {
   globalThis.EventSource = undefined as unknown as typeof EventSource
 
@@ -271,5 +308,5 @@ it('exposes grouped client methods with optional override options', () => {
 
   expectTypeOf(client.system.getLoginInfo).parameters.toEqualTypeOf<[(undefined | null)?, MilkyFetchOptions?]>()
   expectTypeOf(client.group.quitGroup).parameters.toEqualTypeOf<[QuitGroupInput, MilkyFetchOptions?]>()
-  expectTypeOf(client.event).parameters.toEqualTypeOf<[MilkyEventSourceConnectionKind, MilkyEventSourceOptions?]>()
+  expectTypeOf(client.event).parameters.toEqualTypeOf<[(MilkyEventSourceConnectionKind | undefined)?, MilkyEventSourceOptions?]>()
 })
