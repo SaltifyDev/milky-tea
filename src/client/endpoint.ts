@@ -9,7 +9,7 @@ import { clientEndpointNames } from '@/gen/types'
 function createProxy(options: MilkyFetchCreateOptions): any {
   const milkyFetch = createMilkyFetch(options)
   const event = (kind: MilkyEventSourceConnectionKind, eventOptions?: MilkyEventSourceOptions) =>
-    createMilkyEventSource(kind, {
+    createMilkyEventSource(kind ?? 'auto', {
       ...eventOptions,
       baseURL: options.baseURL,
       token: eventOptions?.token ?? options.token,
@@ -66,7 +66,7 @@ function createProxy(options: MilkyFetchCreateOptions): any {
 
 export type MilkyClient = {
   readonly fetch: MilkyFetch
-  readonly event: (kind: MilkyEventSourceConnectionKind, options?: MilkyEventSourceOptions) => Promise<MilkyEventSource>
+  readonly event: (kind?: MilkyEventSourceConnectionKind, options?: MilkyEventSourceOptions) => MilkyEventSource
 } & {
   readonly [K in keyof MilkyClientEndpointNames]: {
     readonly [M in keyof MilkyClientEndpointNames[K]]:
