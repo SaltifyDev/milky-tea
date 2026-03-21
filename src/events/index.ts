@@ -50,7 +50,7 @@ async function createTransportByKind(
   kind: MilkyResolvedEventSourceConnectionKind,
   options: MilkyEventSourceCreateOptions,
 ): Promise<MilkyEventSourceTransport> {
-  const url = joinURL(options.baseURL, '/events')
+  const url = joinURL(options.baseURL, '/event')
 
   if (options.token) {
     url.searchParams.set('token', options.token)
