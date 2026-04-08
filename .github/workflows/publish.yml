@@ -45,6 +45,9 @@ jobs:
             exit 1
           fi
 
+      - name: Ensure npm is up to date
+        run: pnpm install -g npm@latest
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -58,4 +61,4 @@ jobs:
         run: pnpm build
 
       - name: Publish package to npm
-        run: npm publish
+        run: pnpm publish
