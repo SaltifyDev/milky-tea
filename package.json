@@ -41,16 +41,16 @@
     "@saltify/milky-types": "1.2.0-rc.4"
   },
   "devDependencies": {
-    "@antfu/eslint-config": "^7.7.2",
+    "@antfu/eslint-config": "^7.7.3",
     "@typescript/native-preview": "7.0.0-dev.20260309.1",
-    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/coverage-v8": "^4.1.3",
     "bumpp": "^10.4.1",
     "change-case": "^5.4.4",
-    "eslint": "^10.0.3",
+    "eslint": "^10.2.0",
     "eventsource": "^4.1.0",
     "jiti": "^2.6.1",
-    "tsdown": "^0.21.1",
+    "tsdown": "^0.21.7",
     "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.3"
   }
 }
