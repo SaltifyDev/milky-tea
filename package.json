@@ -6,6 +6,10 @@
   "description": "Client library for Milky Protocol.",
   "author": "SaltifyDev",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SaltifyDev/milky-tea.git"
+  },
   "exports": {
     ".": "./dist/index.mjs",
     "./package.json": "./package.json"
