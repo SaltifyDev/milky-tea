@@ -200,8 +200,8 @@ it('dispatches unreported sse termination errors from reconnect loops', async ()
   await connected.promise
 
   let errorMessage: string | undefined
-  const onError = (event: ErrorEvent) => {
-    errorMessage = event.message
+  const onError = (event: any) => {
+    errorMessage = event instanceof Error ? event.message : String(event)
     source.off('error', onError)
   }
   source.on('error', onError)
@@ -237,8 +237,8 @@ it('stops reconnecting when websocket termination errors close the source from a
   })
 
   const errorMessages: string[] = []
-  const onError = (event: ErrorEvent) => {
-    errorMessages.push(event.message)
+  const onError = (event: any) => {
+    errorMessages.push(event instanceof Error ? event.message : String(event))
     source.close()
     source.off('error', onError)
   }
@@ -270,9 +270,10 @@ it('reports transport connection failures during reconnect loops', async () => {
   })
 
   await connected.promise
-  const error = onceEvent<ErrorEvent>(source, 'error')
+  const error = onceEvent(source, 'error')
 
-  expect((await error).message).toBe('connect failed')
+  const errorResult = await error as Error
+  expect(errorResult.message).toBe('connect failed')
   await waitFor(() => source.readyState === source.CLOSED)
 })
 

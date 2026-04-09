@@ -25,7 +25,7 @@ it('connects websocket transports and forwards push and typed events plus parse 
 
   const openEvent = onceEvent(connection.source, 'open')
   socket.open()
-  await expect(openEvent).resolves.toBeInstanceOf(Event)
+  await expect(openEvent).resolves.toBeUndefined()
 
   const pushEvent = onceEvent(connection.source, 'push')
   const typedEvent = onceEvent(connection.source, 'private_message_created')
@@ -33,9 +33,9 @@ it('connects websocket transports and forwards push and typed events plus parse 
   await expect(pushEvent).resolves.toEqual(payload)
   await expect(typedEvent).resolves.toEqual(payload)
 
-  const errorEvent = onceEvent<ErrorEvent>(connection.source, 'error')
+  const errorEvent = onceEvent(connection.source, 'error')
   socket.sendRawMessage('{')
-  expect((await errorEvent).error).toBeInstanceOf(Error)
+  expect(await errorEvent).toBeInstanceOf(Error)
 
   socket.close()
   await expect(connection.termination).resolves.toEqual({
@@ -54,7 +54,7 @@ it('dispatches open for already-open websocket transports', async () => {
   await expect(Promise.race([
     onceEvent(connection.source, 'open'),
     sleep(20).then(() => null),
-  ])).resolves.toBeInstanceOf(Event)
+  ])).resolves.toBeUndefined()
   expect(connection.source.readyState).toBe(connection.source.OPEN)
 
   connection.source.close()
@@ -71,7 +71,7 @@ it('dispatches open for already-open websocket sources created by milky', async 
   await expect(Promise.race([
     onceEvent(source, 'open'),
     sleep(20).then(() => null),
-  ])).resolves.toBeInstanceOf(Event)
+  ])).resolves.toBeUndefined()
   expect(source.readyState).toBe(source.OPEN)
 
   source.close()
@@ -104,7 +104,7 @@ it('connects event sources and reports terminal errors', async () => {
 
   const openEvent = onceEvent(connection.source, 'open')
   source.open()
-  await expect(openEvent).resolves.toBeInstanceOf(Event)
+  await expect(openEvent).resolves.toBeUndefined()
 
   const pushEvent = onceEvent(connection.source, 'push')
   const typedEvent = onceEvent(connection.source, 'private_message_created')
@@ -112,14 +112,14 @@ it('connects event sources and reports terminal errors', async () => {
   await expect(pushEvent).resolves.toEqual(payload)
   await expect(typedEvent).resolves.toEqual(payload)
 
-  const parseError = onceEvent<ErrorEvent>(connection.source, 'error')
+  const parseError = onceEvent(connection.source, 'error')
   source.sendRawMessage('{')
-  expect((await parseError).error).toBeInstanceOf(Error)
+  expect(await parseError).toBeInstanceOf(Error)
 
-  const terminalError = onceEvent<ErrorEvent>(connection.source, 'error')
+  const terminalError = onceEvent(connection.source, 'error')
   source.fail({ closed: true })
 
-  expect((await terminalError).error).toBeInstanceOf(Event)
+  expect(await terminalError).toBeInstanceOf(Event)
   await expect(connection.termination).resolves.toMatchObject({
     type: 'error',
     reported: true,
@@ -175,10 +175,10 @@ it('aborts timed out connection attempts and closes transports that resolve late
     timeout: 5,
   })
 
-  const error = onceEvent<ErrorEvent>(pending, 'error')
-  await expect(error).resolves.toMatchObject({
-    message: 'milky: timed out after 5ms',
-  })
+  const error = onceEvent(pending, 'error')
+  const errorResult = await error as Error
+  expect(errorResult).toBeInstanceOf(Error)
+  expect(errorResult.message).toBe('milky: timed out after 5ms')
   await waitFor(() => pending.readyState === pending.CLOSED)
 
   deferred.resolve(socket as unknown as WebSocket)

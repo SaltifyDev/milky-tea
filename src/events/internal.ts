@@ -33,14 +33,16 @@ function makeDeepReadonly<T>(value: T, seen = new WeakSet<object>()): DeepReadon
   return Object.freeze(value) as DeepReadonly<T>
 }
 
-export type ReadonlyMilkyEvent = DeepReadonly<MilkyEvent>
+interface MilkyEventConstraint {}
+
+export type ReadonlyMilkyEvent<K extends MilkyEvent['event_type'] = MilkyEvent['event_type']> = DeepReadonly<Extract<MilkyEvent, { event_type: K }>> & MilkyEventConstraint
 
 export type MilkyEventSourceEventMap = {
-  error: ErrorEvent
+  error: any
   push: ReadonlyMilkyEvent
-  open: Event
+  open: void
 } & {
-  [P in MilkyEvent['event_type']]: DeepReadonly<Extract<MilkyEvent, { event_type: P }>>
+  [P in MilkyEvent['event_type']]: ReadonlyMilkyEvent<P>
 }
 
 type MilkyEventSourceEventKey = keyof MilkyEventSourceEventMap
@@ -128,7 +130,7 @@ export class MilkyEventSourceController {
     }
 
     this.source.readyState = this.source.OPEN
-    this.source.emit('open', new Event('open'))
+    this.source.emit('open', void 0)
   }
 
   dispatchMessage(message: MilkyEvent): void {
@@ -151,10 +153,7 @@ export class MilkyEventSourceController {
       return
     }
 
-    this.source.emit('error', new ErrorEvent('error', {
-      error,
-      message: error instanceof Error ? error.message : String(error),
-    }))
+    this.source.emit('error', error)
   }
 
   forwardFrom(source: MilkyEventSource): () => void {
