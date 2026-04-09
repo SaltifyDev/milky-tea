@@ -38,7 +38,7 @@
     }
   },
   "dependencies": {
-    "@saltify/milky-types": "1.2.0-rc.4",
+    "@saltify/milky-types": "1.2.0",
     "mitt": "^3.0.1"
   },
   "devDependencies": {
