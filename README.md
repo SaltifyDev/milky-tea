@@ -41,10 +41,7 @@ console.log(friend.friend.nickname)
 通过 `createMilkyClient` 创建一个客户端实例，传入 `baseURL` 和 `token`，之后就可以通过 `client.{category}.{endpoint}(params)` 的方式调用 API 了。例如，调用 `quit_group` API：
 
 ```ts
-await client.group.quitGroup(
-  { group_id: 10001 },
-  { timeout: false },
-)
+await client.group.quitGroup({ group_id: 10001 }, { timeout: false })
 ```
 
 在这里，第二个参数是可选的，可以覆盖默认的 `baseURL`、`token`、`timeout` 等设置。
@@ -76,8 +73,8 @@ source.on('push', (event) => {
 })
 
 // 监听特定类型的事件
-source.on('private_message_created', (event) => {
-  console.log('收到私聊消息:', event.message.content)
+source.on('foobar', (event) => {
+  console.log(event.message.content)
 })
 
 // 监听错误
@@ -116,12 +113,15 @@ const source = createMilkyEventSource('websocket', {
 })
 
 // 或使用自定义传输工厂
-const source = createMilkyEventSource(async (options, signal) => {
-  // 返回 WebSocket 或 EventSource 实例
-  return new WebSocket('wss://milky.example.com/event')
-}, {
-  timeout: 10000,
-})
+const source = createMilkyEventSource(
+  async (options, signal) => {
+    // 返回 WebSocket 或 EventSource 实例
+    return new WebSocket('wss://milky.example.com/event')
+  },
+  {
+    timeout: 10000,
+  },
+)
 
 source.on('open', () => console.log('Connected'))
 source.on('push', event => console.log(event))
@@ -129,6 +129,7 @@ source.close()
 ```
 
 **参数**:
+
 - `kind`: 连接类型 (`'auto'` | `'websocket'` | `'sse'`)
 - `factory`: 自定义传输工厂函数
 - `options`:
