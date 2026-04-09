@@ -45,7 +45,6 @@ it('handles signal abort during auto connection fallback', async () => {
     }
   } as unknown as typeof WebSocket
 
-  const controller = new AbortController()
   const source = createMilkyEventSource('auto', {
     baseURL: 'https://example.com',
     timeout: 5000,
@@ -59,7 +58,7 @@ it('handles signal abort during auto connection fallback', async () => {
 })
 
 it('handles connection that resolves after abort during reconnect', async () => {
-  const { createMilkyEventSource, MilkyEventSourceImpl } = await (async () => {
+  const { createMilkyEventSource } = await (async () => {
     vi.resetModules()
     const deferred = createDeferred<any>()
     vi.doMock('@/events/source', async () => {
@@ -154,7 +153,7 @@ it('handles async iterator with queued messages', async () => {
 })
 
 it('handles reconnect interval sleep interruption', async () => {
-  const { createMilkyEventSource, MilkyEventSourceImpl } = await (async () => {
+  const { createMilkyEventSource } = await (async () => {
     vi.resetModules()
     let attemptCount = 0
     vi.doMock('@/events/source', async () => {
@@ -200,7 +199,7 @@ it('handles reconnect interval sleep interruption', async () => {
 })
 
 it('handles connection closed during signal abort check', async () => {
-  const { createMilkyEventSource, MilkyEventSourceImpl } = await (async () => {
+  const { createMilkyEventSource } = await (async () => {
     vi.resetModules()
     const deferred = createDeferred<any>()
     vi.doMock('@/events/source', async () => {
@@ -240,7 +239,7 @@ it('handles connection closed during signal abort check', async () => {
 })
 
 it('handles websocket ended termination with reconnect', async () => {
-  const { createMilkyEventSource, MilkyEventSourceImpl } = await (async () => {
+  const { createMilkyEventSource } = await (async () => {
     vi.resetModules()
     let callCount = 0
     vi.doMock('@/events/source', async () => {
