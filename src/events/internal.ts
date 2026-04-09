@@ -6,36 +6,16 @@ import mitt from 'mitt'
 const subscribeClose = Symbol('MilkyEventSourceImpl.subscribeClose')
 const finishAsyncIteration = Symbol('MilkyEventSourceImpl.finishAsyncIteration')
 
-type DeepReadonly<T>
-  = T extends (...args: any[]) => unknown ? T
-    : T extends readonly (infer U)[] ? readonly DeepReadonly<U>[]
-      : T extends object ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
-        : T
-
-function makeDeepReadonly<T>(value: T, seen = new WeakSet<object>()): DeepReadonly<T> {
-  if (value == null || typeof value !== 'object') {
-    return value as DeepReadonly<T>
+function freezeShallow<T>(value: T): T {
+  if (value != null && typeof value === 'object') {
+    return Object.freeze(value)
   }
-
-  if (seen.has(value)) {
-    return value as DeepReadonly<T>
-  }
-
-  seen.add(value)
-
-  // Recursively freeze nested objects
-  for (const nested of Object.values(value)) {
-    if (nested != null && typeof nested === 'object') {
-      makeDeepReadonly(nested, seen)
-    }
-  }
-
-  return Object.freeze(value) as DeepReadonly<T>
+  return value
 }
 
 interface MilkyEventConstraint {}
 
-export type ReadonlyMilkyEvent<K extends MilkyEvent['event_type'] = MilkyEvent['event_type']> = DeepReadonly<Extract<MilkyEvent, { event_type: K }>> & MilkyEventConstraint
+export type ReadonlyMilkyEvent<K extends MilkyEvent['event_type'] = MilkyEvent['event_type']> = Readonly<Extract<MilkyEvent, { event_type: K }>> & MilkyEventConstraint
 
 export type MilkyEventSourceEventMap = {
   error: any
@@ -138,14 +118,14 @@ export class MilkyEventSourceController {
       return
     }
 
-    const readonlyMessage = makeDeepReadonly(message)
-    this.source.emit('push', readonlyMessage)
+    const frozenMessage = freezeShallow(message)
+    this.source.emit('push', frozenMessage as never)
 
     if (this._closed) {
       return
     }
 
-    this.source.emit(readonlyMessage.event_type, readonlyMessage as never)
+    this.source.emit(frozenMessage.event_type, frozenMessage as never)
   }
 
   dispatchError(error: unknown): void {
