@@ -1,4 +1,5 @@
-import type { MilkyRawEndpoints } from '@/gen/types'
+import type { MilkyProto, MilkyProtoStruct, MilkyRawEndpoints } from '@/types'
+import { createMilkyProto, rawEndpointNames } from '@/types'
 import { joinURL, withTimeout } from '@/utils'
 
 export interface MilkyFetchOptions {
@@ -17,10 +18,16 @@ export type MilkyFetchCreateOptions = Omit<MilkyFetchOptions, 'baseURL'> & {
 export interface MilkyFetch {
   <const T extends keyof MilkyRawEndpoints>(
     name: T,
-    param: Parameters<MilkyRawEndpoints[T]>[0],
-    override?: MilkyFetchOptions,
+    ...args: MilkyFetchParameters<T>
   ): Promise<ReturnType<MilkyRawEndpoints[T]>>
 }
+
+type MilkyFetchParameters<T extends keyof MilkyRawEndpoints>
+  = Parameters<MilkyRawEndpoints[T]> extends [param: infer P]
+    ? [param: P, override?: MilkyFetchOptions]
+    : Parameters<MilkyRawEndpoints[T]> extends [param?: infer P]
+      ? [param?: P, override?: MilkyFetchOptions]
+      : never
 
 interface MilkyApiResponse<T> {
   status: 'ok' | 'failed'
@@ -29,16 +36,39 @@ interface MilkyApiResponse<T> {
   message?: string | null
 }
 
-type MilkyProto = (typeof import('@/gen/proto'))['milkyProto']
-type MilkyProtoStruct = MilkyProto[string][number]
+let milkyProtoPromise: Promise<MilkyProto | undefined> | undefined
 
-let milkyProtoPromise: Promise<MilkyProto> | undefined
+function isMissingZodError(error: unknown, seen = new Set<unknown>()): boolean {
+  if (seen.has(error)) {
+    return false
+  }
+  seen.add(error)
 
-async function resolveMilkyProto(): Promise<MilkyProto> {
-  milkyProtoPromise ??= import('@/gen/proto')
-    .then(module => module.milkyProto)
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.includes('zod') && (
+    message.includes('Cannot find')
+    || message.includes('ERR_MODULE_NOT_FOUND')
+    || message.includes('module')
+  )) {
+    return true
+  }
+
+  const cause = error != null && typeof error === 'object' && 'cause' in error
+    ? (error as { cause?: unknown }).cause
+    : undefined
+
+  return cause != null && isMissingZodError(cause, seen)
+}
+
+async function resolveMilkyProto(): Promise<MilkyProto | undefined> {
+  milkyProtoPromise ??= import('@/gen/zod')
+    .then(module => createMilkyProto(module.zodApiCategories))
     .catch((error) => {
       milkyProtoPromise = undefined
+      if (isMissingZodError(error)) {
+        return undefined
+      }
+
       throw error
     })
 
@@ -54,21 +84,22 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
 
   return async function fetch<T extends keyof MilkyRawEndpoints>(
     name: T,
-    params: Parameters<MilkyRawEndpoints[T]>[0],
-    override?: MilkyFetchOptions,
+    ...args: MilkyFetchParameters<T>
   ): Promise<ReturnType<MilkyRawEndpoints[T]>> {
+    let [params, override] = args as [unknown, MilkyFetchOptions | undefined]
     const strict = override?.strict ?? options.strict ?? true
-    let paramStruct: MilkyProtoStruct | undefined
-    let responseStruct: MilkyProtoStruct | undefined
+    let paramStruct: MilkyProtoStruct | null | undefined
+    let responseStruct: MilkyProtoStruct | null | undefined
 
     if (strict) {
-      const milkyProto = await resolveMilkyProto()
-
-      if (!Object.hasOwn(milkyProto, name)) {
+      if (!rawEndpointNames.has(String(name))) {
         throw new Error(`milky: unknown endpoint ${String(name)}`)
       }
 
-      [paramStruct, responseStruct] = milkyProto[name]
+      const milkyProto = await resolveMilkyProto()
+      if (milkyProto != null) {
+        [paramStruct, responseStruct] = milkyProto[name]
+      }
     }
 
     if (strict && paramStruct != null) {

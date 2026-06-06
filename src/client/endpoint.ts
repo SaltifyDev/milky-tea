@@ -1,10 +1,10 @@
 import type { MilkyFetch, MilkyFetchCreateOptions, MilkyFetchOptions } from '@/client/fetch'
 import type { MilkyEventSource, MilkyEventSourceOptions } from '@/events'
 import type { MilkyEventSourceConnectionKind } from '@/events/source'
-import type { MilkyClientEndpointNames, MilkyRawEndpoints } from '@/gen/types'
+import type { MilkyApiCategories, MilkyCamelCase, MilkyClientEndpointNames, MilkyRawEndpoints } from '@/types'
 import { createMilkyFetch } from '@/client/fetch'
 import { createMilkyEventSource } from '@/events'
-import { clientEndpointNames } from '@/gen/types'
+import { clientEndpointNames } from '@/types'
 
 function createProxy(options: MilkyFetchCreateOptions): any {
   const milkyFetch = createMilkyFetch(options)
@@ -46,7 +46,7 @@ function createProxy(options: MilkyFetchCreateOptions): any {
           }
 
           const methodName = methodNames[key as any]
-          const methodFn = (param: any, override: any) => milkyFetch(methodName, param, override)
+          const methodFn = (param: any, override: any) => (milkyFetch as any)(methodName, param, override)
           cachedMethods.set(key, methodFn)
           return methodFn
         },
@@ -68,15 +68,22 @@ export type MilkyClient = {
   readonly fetch: MilkyFetch
   readonly event: (kind?: MilkyEventSourceConnectionKind, options?: MilkyEventSourceOptions) => MilkyEventSource
 } & {
-  readonly [K in keyof MilkyClientEndpointNames]: {
-    readonly [M in keyof MilkyClientEndpointNames[K]]:
-    MilkyClientEndpointNames[K][M] extends infer K extends keyof MilkyRawEndpoints
-      ? (...params: [...Parameters<MilkyRawEndpoints[K]>, override?: MilkyFetchOptions]) => Promise<ReturnType<MilkyRawEndpoints[K]>>
+  readonly [K in keyof MilkyApiCategories]: {
+    readonly [E in keyof MilkyApiCategories[K]['apis'] as MilkyCamelCase<E & string>]:
+    E extends keyof MilkyRawEndpoints
+      ? (...params: MilkyClientMethodParameters<E>) => Promise<ReturnType<MilkyRawEndpoints[E]>>
       : never
   } & {
     readonly name: K
   } & {}
 } & {}
+
+type MilkyClientMethodParameters<T extends keyof MilkyRawEndpoints>
+  = Parameters<MilkyRawEndpoints[T]> extends [param: infer P]
+    ? [param: P, override?: MilkyFetchOptions]
+    : Parameters<MilkyRawEndpoints[T]> extends [param?: infer P]
+      ? [param?: P, override?: MilkyFetchOptions]
+      : never
 
 export function createMilkyClient(options: MilkyFetchCreateOptions): MilkyClient {
   return createProxy(options)

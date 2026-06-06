@@ -371,6 +371,29 @@ it('falls back from auto websocket to sse before open', async () => {
   expect(source.readyState).toBe(source.CLOSED)
 })
 
+it('dispatches open when auto websocket opens before forwarding starts', async () => {
+  globalThis.WebSocket = class extends FakeWebSocket {
+    constructor(url: string | URL) {
+      super(url)
+      setTimeout(() => {
+        this.open()
+      }, 0)
+    }
+  } as unknown as typeof WebSocket
+
+  const source = createMilkyEventSource('auto', {
+    baseURL: 'https://example.com/base',
+  })
+
+  await expect(Promise.race([
+    onceEvent(source, 'open'),
+    sleep(20).then(() => 'timed-out'),
+  ])).resolves.toBeUndefined()
+  expect(source.readyState).toBe(source.OPEN)
+
+  source.close()
+})
+
 it('falls back from auto to sse when websocket construction throws', async () => {
   const sseUrls: string[] = []
 

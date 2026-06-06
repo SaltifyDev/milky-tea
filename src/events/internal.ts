@@ -1,6 +1,6 @@
 /* eslint-disable ts/method-signature-style */
 
-import type { Event as MilkyEvent } from '@/gen/proto'
+import type { Event as MilkyEvent } from '@/gen/zod'
 import mitt from 'mitt'
 
 const subscribeClose = Symbol('MilkyEventSourceImpl.subscribeClose')

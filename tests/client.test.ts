@@ -1,7 +1,7 @@
-import type { QuitGroupInput } from '@saltify/milky-types'
 import type { MilkyFetchOptions } from '@/client/fetch'
 import type { MilkyEventSourceOptions } from '@/events'
 import type { MilkyEventSourceConnectionKind } from '@/events/source'
+import type { QuitGroupInput } from '@/index'
 import { afterEach, expect, expectTypeOf, it, vi } from 'vitest'
 import { createMilkyClient } from '@/client/endpoint'
 import { waitFor } from './helpers/async'
