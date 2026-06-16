@@ -1,8 +1,8 @@
 {
   "name": "@saltify/milky-tea",
   "type": "module",
-  "version": "0.2.2",
-  "packageManager": "pnpm@11.5.2",
+  "version": "0.2.3",
+  "packageManager": "pnpm@11.6.0",
   "description": "Client library for Milky Protocol.",
   "author": "SaltifyDev",
   "license": "MIT",
