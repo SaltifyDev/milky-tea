@@ -11,11 +11,10 @@ afterEach(() => {
   vi.resetModules()
 })
 
-it('closes connection when aborted during auto fallback', async () => {
+it('closes websocket connections after transport failure', async () => {
   globalThis.WebSocket = class extends FakeWebSocket {
     constructor() {
       super()
-      // Simulate WebSocket failure
       queueMicrotask(() => {
         this.dispatchEvent(new Event('error'))
         this.close()
@@ -23,7 +22,7 @@ it('closes connection when aborted during auto fallback', async () => {
     }
   } as unknown as typeof WebSocket
 
-  const source = createMilkyEventSource('auto', {
+  const source = createMilkyEventSource('websocket', {
     baseURL: 'https://example.com',
     timeout: 100,
   })
@@ -34,7 +33,7 @@ it('closes connection when aborted during auto fallback', async () => {
   expect(source.readyState).toBe(source.CLOSED)
 })
 
-it('handles signal abort during auto connection fallback', async () => {
+it('handles signal abort during websocket connection', async () => {
   globalThis.WebSocket = class extends FakeWebSocket {
     constructor() {
       super()
@@ -45,12 +44,11 @@ it('handles signal abort during auto connection fallback', async () => {
     }
   } as unknown as typeof WebSocket
 
-  const source = createMilkyEventSource('auto', {
+  const source = createMilkyEventSource('websocket', {
     baseURL: 'https://example.com',
     timeout: 5000,
   })
 
-  // Abort immediately
   source.close()
   await sleep(10)
 

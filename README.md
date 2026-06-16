@@ -50,12 +50,12 @@ await client.group.quitGroup({ group_id: 10001 }, { timeout: false })
 
 通过 `client.event()` 创建一个事件连接，支持 WebSocket 和 SSE 两种连接方式。连接模式有如下几种：
 
-- `auto`：首先尝试 WebSocket，如果在连接打开之前失败，则回退到 SSE
 - `websocket`：仅使用 WebSocket
 - `sse`：仅使用 Server-Sent Events
+- `auto`：兼容旧版本的保留值，不再支持，传入后会报错；请显式使用 `websocket` 或 `sse`
 
 ```ts
-const source = client.event('auto', {
+const source = client.event('websocket', {
   reconnect: {
     interval: 1000,
     attempts: 'always',
@@ -130,7 +130,7 @@ source.close()
 
 **参数**:
 
-- `kind`: 连接类型 (`'auto'` | `'websocket'` | `'sse'`)
+- `kind`: 连接类型 (`'websocket'` | `'sse'`；`'auto'` 为兼容保留值，传入会报错)
 - `factory`: 自定义传输工厂函数
 - `options`:
   - `baseURL`: 服务器地址（使用 kind 时必需）

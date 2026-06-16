@@ -4,7 +4,7 @@ import type { MilkyEventSourceConnectionKind } from '@/events/source'
 import type { QuitGroupInput } from '@/index'
 import { afterEach, expect, expectTypeOf, it, vi } from 'vitest'
 import { createMilkyClient } from '@/client/endpoint'
-import { waitFor } from './helpers/async'
+import { onceEvent, waitFor } from './helpers/async'
 import { FakeEventSource, FakeWebSocket } from './helpers/transports'
 
 const { fallbackEventSourceUrls } = vi.hoisted(() => ({
@@ -201,7 +201,7 @@ it('adds token query when creating websocket event urls', async () => {
   source.close()
 })
 
-it('forwards auto event configuration through the client wrapper', async () => {
+it('reports unsupported auto event kind through the client wrapper', async () => {
   const websocketUrls: string[] = []
   const sseUrls: string[] = []
 
@@ -209,10 +209,7 @@ it('forwards auto event configuration through the client wrapper', async () => {
     constructor(url: string | URL) {
       super(url)
       websocketUrls.push(String(url))
-      queueMicrotask(() => {
-        this.dispatchEvent(new Event('error'))
-        this.close()
-      })
+      throw new Error('unexpected websocket')
     }
   } as unknown as typeof WebSocket
 
@@ -229,20 +226,23 @@ it('forwards auto event configuration through the client wrapper', async () => {
     fetch: vi.fn(),
   })
 
+  // @ts-expect-error auto is no longer supported
   const source = await client.event('auto', {
     token: 'event-token',
     timeout: 25,
     reconnect: false,
   })
 
-  await waitFor(() => websocketUrls.length === 1 && sseUrls.length === 1)
-  expect(websocketUrls).toEqual(['https://example.com/event?access_token=event-token'])
-  expect(sseUrls).toEqual(['https://example.com/event?access_token=event-token'])
+  const error = await onceEvent<Error>(source, 'error')
+  expect(error.message).toBe('milky: event source kind "auto" is no longer supported; use "websocket" or "sse"')
+  await waitFor(() => source.readyState === source.CLOSED)
+  expect(websocketUrls).toEqual([])
+  expect(sseUrls).toEqual([])
 
   source.close()
 })
 
-it('defaults client event kind to auto when omitted', async () => {
+it('defaults client event kind to websocket when omitted', async () => {
   const websocketUrls: string[] = []
   const sseUrls: string[] = []
 
@@ -272,9 +272,9 @@ it('defaults client event kind to auto when omitted', async () => {
 
   const source = client.event()
 
-  await waitFor(() => websocketUrls.length === 1 && sseUrls.length === 1)
+  await waitFor(() => websocketUrls.length === 1)
   expect(websocketUrls).toEqual(['https://example.com/event?access_token=root-token'])
-  expect(sseUrls).toEqual(['https://example.com/event?access_token=root-token'])
+  expect(sseUrls).toEqual([])
 
   source.close()
 })

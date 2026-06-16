@@ -1,4 +1,3 @@
-/* eslint-disable ts/no-use-before-define */
 import type { MilkyEventSource, MilkyEventSourceController, MilkyEventSourceEventMap } from '@/events/internal'
 import type {
   MilkyEventSourceConnection,
@@ -66,79 +65,16 @@ async function createTransportByKind(
   }
 }
 
-async function waitForWebSocketOpen(
-  connection: MilkyEventSourceConnection,
-  signal: AbortSignal,
-): Promise<boolean> {
-  if (connection.kind !== 'websocket') {
-    return true
-  }
-
-  if (connection.source.readyState === connection.source.OPEN) {
-    return true
-  }
-
-  if (connection.source.readyState === connection.source.CLOSED) {
-    return false
-  }
-
-  const deferred = Promise.withResolvers<boolean>()
-  let settled = false
-  const finish = (result: boolean) => {
-    if (settled) {
-      return
-    }
-
-    settled = true
-    connection.source.off('open', onOpen)
-    connection.source.off('error', onError)
-    deferred.resolve(result)
-  }
-  const onOpen = () => {
-    finish(true)
-  }
-  const onError = () => {
-    finish(false)
-  }
-
-  connection.source.on('open', onOpen)
-  connection.source.on('error', onError)
-  void connection.termination.then(() => {
-    finish(false)
-  })
-
-  return raceWithAbort(signal, deferred.promise, () => {
-    connection.source.close()
-    finish(false)
-  })
-}
-
 async function createConnectionByKind(
   kind: MilkyEventSourceConnectionKind,
   options: MilkyEventSourceCreateOptions,
-  signal: AbortSignal,
 ): Promise<MilkyEventSourceConnection> {
-  if (kind !== 'auto') {
-    return connectEventTransport(await createTransportByKind(kind, options))
+  // @ts-expect-error auto is no longer supported
+  if (kind === 'auto') {
+    throw new TypeError('milky: event source kind "auto" is no longer supported; use "websocket" or "sse"')
   }
 
-  let websocketConnection: MilkyEventSourceConnection | undefined
-
-  try {
-    websocketConnection = await connectEventTransport(await createTransportByKind('websocket', options))
-
-    if (await waitForWebSocketOpen(websocketConnection, signal)) {
-      return websocketConnection
-    }
-  }
-  catch (error) {
-    if (signal.aborted) {
-      throw error
-    }
-  }
-
-  websocketConnection?.source.close()
-  return connectEventTransport(await createTransportByKind('sse', options))
+  return connectEventTransport(await createTransportByKind(kind, options))
 }
 
 function createDisconnectError(): Error {
@@ -174,7 +110,7 @@ export function createMilkyEventSource(
     try {
       const connectionPromise = typeof kindOrFactory === 'function'
         ? Promise.resolve(kindOrFactory(eventOptions, controller.signal)).then(connectEventTransport)
-        : createConnectionByKind(kindOrFactory, options as MilkyEventSourceCreateOptions, controller.signal)
+        : createConnectionByKind(kindOrFactory, options as MilkyEventSourceCreateOptions)
       connectionPromise.then((connection) => {
         if (shouldCloseTransport || controller.signal.aborted) {
           connection.source.close()
@@ -212,18 +148,6 @@ export function createMilkyEventSource(
 
   async function forwardConnection(connection: MilkyEventSourceConnection) {
     const stopForwarding = controllerState.forwardFrom(connection.source)
-
-    // Auto websocket can observe the inner open before the outer source starts
-    // forwarding, so mirror the already-open state on the next task.
-    if (connection.source.readyState === connection.source.OPEN) {
-      setTimeout(() => {
-        if (signal.aborted || currentConnection !== connection || emitter.readyState !== emitter.CONNECTING) {
-          return
-        }
-
-        controllerState.dispatchOpen()
-      }, 0)
-    }
 
     try {
       return await connection.termination

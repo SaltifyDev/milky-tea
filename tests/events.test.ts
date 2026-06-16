@@ -322,19 +322,15 @@ it('closes sources through Symbol.dispose', async () => {
   await waitFor(() => socket.closeCalls === 1)
 })
 
-it('falls back from auto websocket to sse before open', async () => {
+it('reports unsupported auto event kind without creating transports', async () => {
   const websocketUrls: string[] = []
-  const eventSources: FakeEventSource[] = []
   const sseUrls: string[] = []
 
   globalThis.WebSocket = class extends FakeWebSocket {
     constructor(url: string | URL) {
       super(url)
       websocketUrls.push(String(url))
-      queueMicrotask(() => {
-        this.dispatchEvent(new Event('error'))
-        this.close()
-      })
+      throw new Error('unexpected websocket')
     }
   } as unknown as typeof WebSocket
 
@@ -342,36 +338,27 @@ it('falls back from auto websocket to sse before open', async () => {
     constructor(url: string | URL) {
       super(url)
       sseUrls.push(String(url))
-      eventSources.push(this)
+      throw new Error('unexpected sse fallback')
     }
   } as unknown as typeof EventSource
 
-  const source = await createMilkyEventSource('auto', {
+  // @ts-expect-error auto is no longer supported
+  const source = createMilkyEventSource('auto', {
     baseURL: 'https://example.com/base',
     token: 'event-token',
   })
 
-  await waitFor(() => websocketUrls.length === 1 && sseUrls.length === 1)
-  expect(websocketUrls).toEqual(['https://example.com/event?access_token=event-token'])
-  expect(sseUrls).toEqual(['https://example.com/event?access_token=event-token'])
-
-  const payload = {
-    event_type: 'private_message_created',
-    id: 3,
-  } as never
-  const pushEvent = onceEvent(source, 'push')
-  const typedEvent = onceEvent(source, 'private_message_created')
-  eventSources[0]!.open()
-  eventSources[0]!.sendMessage(payload)
-
-  await expect(pushEvent).resolves.toEqual(payload)
-  await expect(typedEvent).resolves.toEqual(payload)
+  const error = await onceEvent(source, 'error') as Error
+  expect(error.message).toBe('milky: event source kind "auto" is no longer supported; use "websocket" or "sse"')
+  await waitFor(() => source.readyState === source.CLOSED)
+  expect(websocketUrls).toEqual([])
+  expect(sseUrls).toEqual([])
 
   source.close()
   expect(source.readyState).toBe(source.CLOSED)
 })
 
-it('dispatches open when auto websocket opens before forwarding starts', async () => {
+it('reports unsupported auto before websocket can open', async () => {
   globalThis.WebSocket = class extends FakeWebSocket {
     constructor(url: string | URL) {
       super(url)
@@ -381,20 +368,19 @@ it('dispatches open when auto websocket opens before forwarding starts', async (
     }
   } as unknown as typeof WebSocket
 
+  // @ts-expect-error auto is no longer supported
   const source = createMilkyEventSource('auto', {
     baseURL: 'https://example.com/base',
   })
 
-  await expect(Promise.race([
-    onceEvent(source, 'open'),
-    sleep(20).then(() => 'timed-out'),
-  ])).resolves.toBeUndefined()
-  expect(source.readyState).toBe(source.OPEN)
+  const error = await onceEvent(source, 'error') as Error
+  expect(error.message).toBe('milky: event source kind "auto" is no longer supported; use "websocket" or "sse"')
+  await waitFor(() => source.readyState === source.CLOSED)
 
   source.close()
 })
 
-it('falls back from auto to sse when websocket construction throws', async () => {
+it('reports unsupported auto before websocket construction errors', async () => {
   const sseUrls: string[] = []
 
   globalThis.WebSocket = class {
@@ -407,16 +393,20 @@ it('falls back from auto to sse when websocket construction throws', async () =>
     constructor(url: string | URL) {
       super(url)
       sseUrls.push(String(url))
+      throw new Error('unexpected sse fallback')
     }
   } as unknown as typeof EventSource
 
-  const source = await createMilkyEventSource('auto', {
+  // @ts-expect-error auto is no longer supported
+  const source = createMilkyEventSource('auto', {
     baseURL: 'https://example.com/base',
     token: 'event-token',
   })
 
-  await waitFor(() => sseUrls.length === 1)
-  expect(sseUrls).toEqual(['https://example.com/event?access_token=event-token'])
+  const error = await onceEvent(source, 'error') as Error
+  expect(error.message).toBe('milky: event source kind "auto" is no longer supported; use "websocket" or "sse"')
+  await waitFor(() => source.readyState === source.CLOSED)
+  expect(sseUrls).toEqual([])
 
   source.close()
 })

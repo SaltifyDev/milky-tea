@@ -8,8 +8,8 @@ import { clientEndpointNames } from '@/types'
 
 function createProxy(options: MilkyFetchCreateOptions): any {
   const milkyFetch = createMilkyFetch(options)
-  const event = (kind: MilkyEventSourceConnectionKind, eventOptions?: MilkyEventSourceOptions) =>
-    createMilkyEventSource(kind ?? 'auto', {
+  const event = (kind?: MilkyEventSourceConnectionKind, eventOptions?: MilkyEventSourceOptions) =>
+    createMilkyEventSource(kind ?? 'websocket', {
       ...eventOptions,
       baseURL: options.baseURL,
       token: eventOptions?.token ?? options.token,

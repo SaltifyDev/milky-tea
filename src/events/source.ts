@@ -2,7 +2,7 @@
 import type { MilkyEventSource, MilkyEventSourceController, MilkyEventSourceTerminate } from '@/events/internal'
 import { MilkyEventSourceImpl } from '@/events/internal'
 
-export type MilkyEventSourceConnectionKind = 'auto' | 'sse' | 'websocket'
+export type MilkyEventSourceConnectionKind = 'sse' | 'websocket'
 export type MilkyResolvedEventSourceConnectionKind = Exclude<MilkyEventSourceConnectionKind, 'auto'>
 export type MilkyEventSourceTransport = EventSource | WebSocket
 
