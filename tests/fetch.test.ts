@@ -15,7 +15,7 @@ function createJsonResponse(body: unknown, init?: ResponseInit): Response {
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  vi.doUnmock('@/gen/zod')
+  vi.doUnmock('@/gen/zod-api')
 })
 
 it('uses the global fetch implementation when no local fetch is provided', async () => {
@@ -261,7 +261,7 @@ it('skips request and response validation when strict is disabled on the client'
 
 it('skips zod validation when zod schemas are unavailable', async () => {
   vi.resetModules()
-  vi.doMock('@/gen/zod', () => {
+  vi.doMock('@/gen/zod-api', () => {
     throw new Error('Cannot find package "zod"')
   })
   const { createMilkyFetch: createFetchWithoutZod } = await import('@/client/fetch')

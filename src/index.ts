@@ -1,5 +1,5 @@
 export * from './client'
-export * from './events/index'
+export { resolveMilkyEvent } from './event'
 export { milkyPackageVersion, milkyVersion } from './gen/types'
 export type * from './gen/types'
 export type { MilkyRawEndpointName, MilkyRawEndpoints } from './types'

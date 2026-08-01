@@ -3,18 +3,12 @@
 [![CI](https://github.com/SaltifyDev/milky-tea/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/SaltifyDev/milky-tea/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FSaltifyDev%2Fmilky-tea%2Fbadges%2Fcoverage-badge.json)](https://github.com/SaltifyDev/milky-tea/actions/workflows/ci.yml)
 
-Milky 的 TypeScript SDK，提供类型安全的 API 调用和事件流支持。
+Milky 的 TypeScript SDK，提供类型安全的 API 调用和事件解析。
 
 ## 安装
 
 ```bash
-npm i @saltify/milky-tea @saltify/milky-types
-```
-
-如果运行环境不支持 EventSource（例如 Node.js 环境）且需要 SSE 支持，则需要安装 `eventsource`：
-
-```bash
-npm i eventsource
+pnpm add @saltify/milky-tea zod
 ```
 
 ## 使用方法
@@ -46,99 +40,28 @@ await client.group.quitGroup({ group_id: 10001 }, { timeout: false })
 
 在这里，第二个参数是可选的，可以覆盖默认的 `baseURL`、`token`、`timeout` 等设置。
 
-### 监听事件
+### 解析事件
 
-通过 `client.event()` 创建一个事件连接，支持 WebSocket 和 SSE 两种连接方式。连接模式有如下几种：
-
-- `websocket`：仅使用 WebSocket
-- `sse`：仅使用 Server-Sent Events
-- `auto`：兼容旧版本的保留值，不再支持，传入后会报错；请显式使用 `websocket` 或 `sse`
+SDK 不负责创建或管理事件连接。通过 SSE、WebSocket、WebHook 或其他方式收到事件后，将反序列化后的对象传给 `resolveMilkyEvent`：
 
 ```ts
-const source = client.event('websocket', {
-  reconnect: {
-    interval: 1000,
-    attempts: 'always',
-  },
-})
+import { resolveMilkyEvent } from '@saltify/milky-tea/event'
 
-// 监听连接打开
-source.on('open', () => {
-  console.log('connected')
-})
+const event = await resolveMilkyEvent(JSON.parse(payload))
 
-// 监听所有事件
-source.on('push', (event) => {
-  console.log(event.event_type, event)
-})
-
-// 监听特定类型的事件
-source.on('foobar', (event) => {
-  console.log(event.message.content)
-})
-
-// 监听错误
-source.on('error', (event) => {
-  console.error(event.message)
-})
-
-// 使用 async iteration
-for await (const event of source) {
-  console.log(event.event_type)
-  if (shouldStop)
+switch (event.event_type) {
+  case 'message_receive':
+    console.log(event.data)
+    break
+  case 'bot_offline':
+    console.log(event.data.reason)
     break
 }
-
-source.close()
 ```
 
-**注意**: 事件对象是深度只读的（immutable），所有嵌套属性都被冻结，无法修改。
+也可以从包根入口导入。推荐使用 `@saltify/milky-tea/event`，以便打包器完全隔离客户端代码和 API schema。
 
-### `createMilkyEventSource`
-
-如果需要更底层的事件源控制，可以使用 `createMilkyEventSource` 直接创建事件源。
-
-```ts
-import { createMilkyEventSource } from '@saltify/milky-tea'
-
-// 使用连接类型和选项
-const source = createMilkyEventSource('websocket', {
-  baseURL: 'https://milky.example.com',
-  token: process.env.MILKY_TOKEN,
-  timeout: 15000,
-  reconnect: {
-    interval: 1000,
-    attempts: 5,
-  },
-})
-
-// 或使用自定义传输工厂
-const source = createMilkyEventSource(
-  async (options, signal) => {
-    // 返回 WebSocket 或 EventSource 实例
-    return new WebSocket('wss://milky.example.com/event')
-  },
-  {
-    timeout: 10000,
-  },
-)
-
-source.on('open', () => console.log('Connected'))
-source.on('push', event => console.log(event))
-source.close()
-```
-
-**参数**:
-
-- `kind`: 连接类型 (`'websocket'` | `'sse'`；`'auto'` 为兼容保留值，传入会报错)
-- `factory`: 自定义传输工厂函数
-- `options`:
-  - `baseURL`: 服务器地址（使用 kind 时必需）
-  - `token`: 访问令牌
-  - `timeout`: 连接超时时间（默认 15000ms）
-  - `reconnect`: 重连配置
-    - `interval`: 重连间隔（毫秒）
-    - `attempts`: 重连次数（`'always'` 或数字）
+`resolveMilkyEvent` 使用生成的 Zod schema 校验输入。校验结果会移除未知字段并返回深拷贝，但不会冻结返回对象；校验失败时会抛出带有 Zod 错误原因的异常。
 
 ### `createMilkyFetch`
 

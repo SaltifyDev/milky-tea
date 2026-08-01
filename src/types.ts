@@ -1,4 +1,4 @@
-import type { zodApiCategories } from '@/gen/zod'
+import type { zodApiCategories } from '@/gen/zod-api'
 import { endpointNamesByCategory } from '@/gen/meta'
 
 type ApiCategories = typeof zodApiCategories

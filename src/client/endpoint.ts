@@ -1,24 +1,14 @@
 import type { MilkyFetch, MilkyFetchCreateOptions, MilkyFetchOptions } from '@/client/fetch'
-import type { MilkyEventSource, MilkyEventSourceOptions } from '@/events'
-import type { MilkyEventSourceConnectionKind } from '@/events/source'
 import type { MilkyApiCategories, MilkyCamelCase, MilkyClientEndpointNames, MilkyRawEndpoints } from '@/types'
 import { createMilkyFetch } from '@/client/fetch'
-import { createMilkyEventSource } from '@/events'
 import { clientEndpointNames } from '@/types'
 
 function createProxy(options: MilkyFetchCreateOptions): any {
   const milkyFetch = createMilkyFetch(options)
-  const event = (kind?: MilkyEventSourceConnectionKind, eventOptions?: MilkyEventSourceOptions) =>
-    createMilkyEventSource(kind ?? 'websocket', {
-      ...eventOptions,
-      baseURL: options.baseURL,
-      token: eventOptions?.token ?? options.token,
-    })
 
   const cachedEndpoints = new Map<keyof MilkyClientEndpointNames, any>()
   return new Proxy({
     fetch: milkyFetch,
-    event,
   }, {
     get(target, prop) {
       if (!Object.hasOwn(clientEndpointNames, prop)) {
@@ -66,7 +56,6 @@ function createProxy(options: MilkyFetchCreateOptions): any {
 
 export type MilkyClient = {
   readonly fetch: MilkyFetch
-  readonly event: (kind?: MilkyEventSourceConnectionKind, options?: MilkyEventSourceOptions) => MilkyEventSource
 } & {
   readonly [K in keyof MilkyApiCategories]: {
     readonly [E in keyof MilkyApiCategories[K]['apis'] as MilkyCamelCase<E & string>]:

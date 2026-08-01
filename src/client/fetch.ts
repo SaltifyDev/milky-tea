@@ -61,7 +61,7 @@ function isMissingZodError(error: unknown, seen = new Set<unknown>()): boolean {
 }
 
 async function resolveMilkyProto(): Promise<MilkyProto | undefined> {
-  milkyProtoPromise ??= import('@/gen/zod')
+  milkyProtoPromise ??= import('@/gen/zod-api')
     .then(module => createMilkyProto(module.zodApiCategories))
     .catch((error) => {
       milkyProtoPromise = undefined
