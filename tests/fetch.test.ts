@@ -92,6 +92,20 @@ it('posts JSON requests to the API endpoint and returns data payloads', async ()
   expect(fetchMock).toHaveBeenCalledOnce()
 })
 
+it('types schema-less endpoint responses as void', async () => {
+  const milkyFetch = createMilkyFetch({
+    baseURL: 'https://example.com',
+    fetch: async () => createJsonResponse({
+      status: 'ok',
+      retcode: 0,
+    }),
+  })
+
+  const pending = milkyFetch('quit_group', { group_id: 10001 })
+  expectTypeOf(pending).toEqualTypeOf<Promise<void>>()
+  await expect(pending).resolves.toBeUndefined()
+})
+
 it('allows per-request overrides for baseURL, token, fetch and headers', async () => {
   const defaultFetch = vi.fn()
   const overrideFetch = vi.fn(async (request: Request) => {

@@ -45,9 +45,9 @@ if (token) {
 
 const eventSource = new EventSource(eventURL)
 
-eventSource.onmessage = (event) => {
+eventSource.addEventListener('milky_event', (event) => {
   handleEventPayload(String(event.data)).catch(reportError)
-}
+})
 
 // EventSource reconnects automatically after recoverable connection failures.
 eventSource.onerror = (event) => {

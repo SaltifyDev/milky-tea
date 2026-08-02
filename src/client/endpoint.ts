@@ -1,6 +1,6 @@
 import type { MilkyFetch, MilkyFetchCreateOptions, MilkyFetchOptions } from '@/client/fetch'
 import type { ApiCategories, ApiEndpoints } from '@/gen/types'
-import type { MilkyCamelCase, MilkyClientEndpointNames, MilkyRawEndpoints } from '@/types'
+import type { MilkyCamelCase, MilkyClientEndpointNames, MilkyEndpointResponse, MilkyRawEndpoints } from '@/types'
 import { createMilkyFetch } from '@/client/fetch'
 import { clientEndpointNames } from '@/types'
 
@@ -63,7 +63,7 @@ export type MilkyClient = {
   readonly [K in keyof ApiCategories]: {
     readonly [E in keyof ApiCategories[K] as MilkyCamelCase<E & string>]:
     E extends keyof MilkyRawEndpoints & keyof ApiEndpoints
-      ? (...params: MilkyClientMethodParameters<E>) => Promise<ApiEndpoints[E]['response']>
+      ? (...params: MilkyClientMethodParameters<E>) => Promise<MilkyEndpointResponse<E>>
       : never
   } & {
     /** Snake-case Milky API category name. */

@@ -110,6 +110,7 @@ it('exposes grouped client methods with optional override options', () => {
   expectTypeOf(client.group.quitGroup).parameters.toEqualTypeOf<[QuitGroupInput_ZodInput, MilkyFetchOptions?]>()
   expectTypeOf(client.group.setGroupEssenceMessage).parameters.toEqualTypeOf<[SetGroupEssenceMessageInput_ZodInput, MilkyFetchOptions?]>()
   expectTypeOf(client.message.sendPrivateMessage).parameters.toEqualTypeOf<[SendPrivateMessageInput_ZodInput, MilkyFetchOptions?]>()
+  expectTypeOf(client.group.quitGroup).returns.toEqualTypeOf<Promise<void>>()
   expectTypeOf(client.message.sendPrivateMessage).returns.toEqualTypeOf<Promise<SendPrivateMessageOutput>>()
   expect(client).not.toHaveProperty('event')
 })

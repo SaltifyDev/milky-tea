@@ -46,6 +46,8 @@ export type MilkyRawEndpoints = UnionToIntersection<{
 /** Name of any endpoint defined by the supported Milky protocol version. */
 export type MilkyRawEndpointName = keyof MilkyRawEndpoints
 
+export type MilkyEndpointResponse<T extends keyof MilkyRawEndpoints> = ReturnType<MilkyRawEndpoints[T]>
+
 export type MilkyApiCategories = ApiCategories
 
 export type MilkyCamelCase<S extends string> = CamelCase<S>

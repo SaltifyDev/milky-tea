@@ -1,5 +1,5 @@
 import type { ApiEndpoints } from '@/gen/types'
-import type { MilkyProto, MilkyProtoStruct, MilkyRawEndpoints } from '@/types'
+import type { MilkyEndpointResponse, MilkyProto, MilkyProtoStruct, MilkyRawEndpoints } from '@/types'
 import { createMilkyProto, rawEndpointNames } from '@/types'
 import { joinURL, withTimeout } from '@/utils'
 
@@ -45,7 +45,7 @@ export interface MilkyFetch {
   <const T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>(
     name: T,
     ...args: MilkyFetchParameters<T>
-  ): Promise<ApiEndpoints[T]['response']>
+  ): Promise<MilkyEndpointResponse<T>>
 }
 
 type MilkyFetchParameters<T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>
@@ -118,7 +118,7 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
   return async function fetch<T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>(
     name: T,
     ...args: MilkyFetchParameters<T>
-  ): Promise<ApiEndpoints[T]['response']> {
+  ): Promise<MilkyEndpointResponse<T>> {
     let [params, override] = args as [unknown, MilkyFetchOptions | undefined]
     const zod = override?.zod ?? options.zod ?? true
     let paramStruct: MilkyProtoStruct | null | undefined
@@ -200,10 +200,10 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       },
     )
 
-    let payload: MilkyApiResponse<ApiEndpoints[T]['response']>
+    let payload: MilkyApiResponse<MilkyEndpointResponse<T>>
 
     try {
-      payload = await response.json() as MilkyApiResponse<ApiEndpoints[T]['response']>
+      payload = await response.json() as MilkyApiResponse<MilkyEndpointResponse<T>>
     }
     catch (error) {
       throw new Error(`milky: failed to parse response for ${String(name)}`, { cause: error })
@@ -214,7 +214,7 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
     }
 
     if (!zod || responseStruct == null) {
-      return payload.data as ApiEndpoints[T]['response']
+      return payload.data as MilkyEndpointResponse<T>
     }
 
     const responseParseResult = await responseStruct.safeParseAsync(payload.data)
@@ -223,6 +223,6 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       throw new Error(`milky: failed to parse response for ${String(name)}: ${responseParseResult.error.message}`)
     }
 
-    return responseParseResult.data as ApiEndpoints[T]['response']
+    return responseParseResult.data as MilkyEndpointResponse<T>
   }
 }
