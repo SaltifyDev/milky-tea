@@ -38,10 +38,12 @@ type UnionToIntersection<T> = (T extends unknown ? (value: T) => void : never) e
   ? R
   : never
 
+/** Map of snake-case Milky endpoint names to their request and response signatures. */
 export type MilkyRawEndpoints = UnionToIntersection<{
   [C in ApiCategoryName]: RawEndpointsForCategory<C>
 }[ApiCategoryName]>
 
+/** Name of any endpoint defined by the supported Milky protocol version. */
 export type MilkyRawEndpointName = keyof MilkyRawEndpoints
 
 export type MilkyApiCategories = ApiCategories

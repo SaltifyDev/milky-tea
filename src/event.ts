@@ -46,6 +46,13 @@ async function resolveMilkyEventSchema(): Promise<MilkyEventSchema> {
   return milkyEventSchemaPromise
 }
 
+/**
+ * Validates and resolves an unknown value as a Milky event.
+ *
+ * @param obj - Deserialized event payload received from a Milky implementation.
+ * @returns A validated Milky event with its discriminated union type preserved.
+ * @throws If Zod is unavailable or the payload is not a valid Milky event.
+ */
 export async function resolveMilkyEvent(obj: unknown): Promise<MilkyEvent> {
   const schema = await resolveMilkyEventSchema()
   const result = await schema.safeParseAsync(obj)

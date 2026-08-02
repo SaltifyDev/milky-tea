@@ -55,7 +55,9 @@ function createProxy(options: MilkyFetchCreateOptions): any {
   })
 }
 
+/** A category-based, camel-case client for all Milky API endpoints. */
 export type MilkyClient = {
+  /** Low-level endpoint caller configured with the same defaults as this client. */
   readonly fetch: MilkyFetch
 } & {
   readonly [K in keyof ApiCategories]: {
@@ -64,6 +66,7 @@ export type MilkyClient = {
       ? (...params: MilkyClientMethodParameters<E>) => Promise<ApiEndpoints[E]['response']>
       : never
   } & {
+    /** Snake-case Milky API category name. */
     readonly name: K
   } & {}
 } & {}
@@ -75,6 +78,15 @@ type MilkyClientMethodParameters<T extends keyof MilkyRawEndpoints & keyof ApiEn
       ? [param?: null | undefined, override?: MilkyFetchOptions]
       : never
 
+/**
+ * Creates a typed Milky client grouped by API category.
+ *
+ * Endpoint names are converted from snake case to camel case. The original
+ * endpoint names remain available through {@link MilkyClient.fetch}.
+ *
+ * @param options - Default connection, validation, and request options.
+ * @returns A category-based Milky API client.
+ */
 export function createMilkyClient(options: MilkyFetchCreateOptions): MilkyClient {
   return createProxy(options)
 }

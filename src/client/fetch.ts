@@ -3,20 +3,45 @@ import type { MilkyProto, MilkyProtoStruct, MilkyRawEndpoints } from '@/types'
 import { createMilkyProto, rawEndpointNames } from '@/types'
 import { joinURL, withTimeout } from '@/utils'
 
+/** Shared defaults and per-request overrides for Milky API calls. */
 export interface MilkyFetchOptions {
+  /** Base URL of the Milky implementation, including any path prefix. */
   readonly baseURL?: string | URL
+  /**
+   * Whether to validate request parameters and response data with Zod.
+   *
+   * @defaultValue `true`
+   */
   readonly zod?: boolean
+  /** Bearer token sent when the request does not already contain an `Authorization` header. */
   readonly token?: string
+  /**
+   * Request timeout in milliseconds. Set to `false` to disable the timeout.
+   *
+   * @defaultValue `30000`
+   */
   readonly timeout?: number | false
+  /** Additional Fetch API options applied to every request. */
   readonly request?: Omit<RequestInit, 'body' | 'signal' | 'method'>
+  /** Custom Fetch API implementation. Defaults to `globalThis.fetch`. */
   readonly fetch?: (request: Request) => Promise<Response>
 }
 
+/** Options used to create a {@link MilkyFetch} instance. */
 export type MilkyFetchCreateOptions = Omit<MilkyFetchOptions, 'baseURL'> & {
+  /** Base URL of the Milky implementation, including any path prefix. */
   readonly baseURL: string | URL
 }
 
+/** A typed function for invoking Milky API endpoints by their protocol names. */
 export interface MilkyFetch {
+  /**
+   * Invokes a Milky API endpoint.
+   *
+   * @param name - Snake-case endpoint name from the Milky protocol.
+   * @param args - Endpoint parameters followed by optional per-request overrides.
+   * @returns The endpoint response data.
+   */
   <const T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>(
     name: T,
     ...args: MilkyFetchParameters<T>
@@ -76,6 +101,13 @@ async function resolveMilkyProto(): Promise<MilkyProto | undefined> {
   return milkyProtoPromise
 }
 
+/**
+ * Creates a typed, low-level Milky API caller.
+ *
+ * @param options - Default connection, validation, and request options.
+ * @returns A function that invokes endpoints by their snake-case protocol names.
+ * @throws If no Fetch API implementation is available.
+ */
 export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
   if (options.fetch == null && globalThis.fetch == null) {
     throw new Error('milky: fetch is not provided')
