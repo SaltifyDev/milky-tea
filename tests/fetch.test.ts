@@ -1,4 +1,9 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import type {
+  GetFriendInfoInput_ZodInput,
+  GetFriendInfoOutput,
+  GetLoginInfoOutput,
+} from '@/index'
+import { afterEach, expect, expectTypeOf, it, vi } from 'vitest'
 import { createMilkyFetch } from '@/client/fetch'
 import { sleep } from './helpers/async'
 
@@ -15,7 +20,7 @@ function createJsonResponse(body: unknown, init?: ResponseInit): Response {
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  vi.doUnmock('@/gen/zod')
+  vi.doUnmock('@/gen/zod-api')
 })
 
 it('uses the global fetch implementation when no local fetch is provided', async () => {
@@ -38,7 +43,10 @@ it('uses the global fetch implementation when no local fetch is provided', async
     baseURL: 'https://example.com',
   })
 
-  await expect(milkyFetch('get_login_info', undefined)).resolves.toEqual({
+  const pending = milkyFetch('get_login_info')
+  expectTypeOf(pending).toEqualTypeOf<Promise<GetLoginInfoOutput>>()
+
+  await expect(pending).resolves.toEqual({
     uin: 10001,
     nickname: 'bot',
   })
@@ -84,6 +92,20 @@ it('posts JSON requests to the API endpoint and returns data payloads', async ()
   expect(fetchMock).toHaveBeenCalledOnce()
 })
 
+it('types schema-less endpoint responses as void', async () => {
+  const milkyFetch = createMilkyFetch({
+    baseURL: 'https://example.com',
+    fetch: async () => createJsonResponse({
+      status: 'ok',
+      retcode: 0,
+    }),
+  })
+
+  const pending = milkyFetch('quit_group', { group_id: 10001 })
+  expectTypeOf(pending).toEqualTypeOf<Promise<void>>()
+  await expect(pending).resolves.toBeUndefined()
+})
+
 it('allows per-request overrides for baseURL, token, fetch and headers', async () => {
   const defaultFetch = vi.fn()
   const overrideFetch = vi.fn(async (request: Request) => {
@@ -123,7 +145,10 @@ it('allows per-request overrides for baseURL, token, fetch and headers', async (
     },
   })
 
-  await expect(milkyFetch('get_friend_info', { user_id: 10001 } as never, {
+  const input = {
+    user_id: 10001,
+  } satisfies GetFriendInfoInput_ZodInput
+  const pending = milkyFetch('get_friend_info', input, {
     baseURL: 'https://override.example.com/',
     token: 'override-token',
     fetch: overrideFetch,
@@ -132,7 +157,10 @@ it('allows per-request overrides for baseURL, token, fetch and headers', async (
         'x-sdk': 'milky',
       },
     },
-  })).resolves.toEqual({
+  })
+  expectTypeOf(pending).toEqualTypeOf<Promise<GetFriendInfoOutput>>()
+
+  await expect(pending).resolves.toEqual({
     friend: {
       user_id: 10001,
       nickname: 'friend',
@@ -196,7 +224,7 @@ it('throws when the endpoint name is unknown', async () => {
   expect(fetchMock).not.toHaveBeenCalled()
 })
 
-it('skips unknown endpoint checks when strict is disabled', async () => {
+it('skips unknown endpoint checks when zod is disabled', async () => {
   const fetchMock = vi.fn(async (request: Request) => {
     expect(request.url).toBe('https://example.com/api/unknown_endpoint')
 
@@ -211,7 +239,7 @@ it('skips unknown endpoint checks when strict is disabled', async () => {
 
   const milkyFetch = createMilkyFetch({
     baseURL: 'https://example.com',
-    strict: false,
+    zod: false,
     fetch: fetchMock,
   })
 
@@ -232,7 +260,7 @@ it('validates request params before issuing the request', async () => {
   expect(fetchMock).not.toHaveBeenCalled()
 })
 
-it('skips request and response validation when strict is disabled on the client', async () => {
+it('skips request and response validation when zod is disabled on the client', async () => {
   const fetchMock = vi.fn(async (request: Request) => {
     expect(await request.text()).toBe('{}')
 
@@ -248,7 +276,7 @@ it('skips request and response validation when strict is disabled on the client'
 
   const milkyFetch = createMilkyFetch({
     baseURL: 'https://example.com',
-    strict: false,
+    zod: false,
     fetch: fetchMock,
   })
 
@@ -261,7 +289,7 @@ it('skips request and response validation when strict is disabled on the client'
 
 it('skips zod validation when zod schemas are unavailable', async () => {
   vi.resetModules()
-  vi.doMock('@/gen/zod', () => {
+  vi.doMock('@/gen/zod-api', () => {
     throw new Error('Cannot find package "zod"')
   })
   const { createMilkyFetch: createFetchWithoutZod } = await import('@/client/fetch')
@@ -291,7 +319,7 @@ it('skips zod validation when zod schemas are unavailable', async () => {
   expect(fetchMock).toHaveBeenCalledOnce()
 })
 
-it('allows overriding strict per request', async () => {
+it('allows overriding zod per request', async () => {
   const fetchMock = vi.fn(async () => createJsonResponse({
     status: 'ok',
     retcode: 0,
@@ -303,7 +331,7 @@ it('allows overriding strict per request', async () => {
 
   const milkyFetch = createMilkyFetch({
     baseURL: 'https://example.com',
-    strict: false,
+    zod: false,
     fetch: fetchMock,
   })
 
@@ -312,7 +340,7 @@ it('allows overriding strict per request', async () => {
     nickname: 'bot',
   })
   await expect(milkyFetch('get_login_info', undefined, {
-    strict: true,
+    zod: true,
   })).rejects.toThrow('milky: failed to parse response for get_login_info')
   expect(fetchMock).toHaveBeenCalledTimes(2)
 })

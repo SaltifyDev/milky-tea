@@ -1,32 +1,58 @@
-import type { MilkyProto, MilkyProtoStruct, MilkyRawEndpoints } from '@/types'
+import type { ApiEndpoints } from '@/gen/types'
+import type { MilkyEndpointResponse, MilkyProto, MilkyProtoStruct, MilkyRawEndpoints } from '@/types'
 import { createMilkyProto, rawEndpointNames } from '@/types'
 import { joinURL, withTimeout } from '@/utils'
 
+/** Shared defaults and per-request overrides for Milky API calls. */
 export interface MilkyFetchOptions {
+  /** Base URL of the Milky implementation, including any path prefix. */
   readonly baseURL?: string | URL
-  readonly strict?: boolean
+  /**
+   * Whether to validate request parameters and response data with Zod.
+   *
+   * @defaultValue `true`
+   */
+  readonly zod?: boolean
+  /** Bearer token sent when the request does not already contain an `Authorization` header. */
   readonly token?: string
+  /**
+   * Request timeout in milliseconds. Set to `false` to disable the timeout.
+   *
+   * @defaultValue `30000`
+   */
   readonly timeout?: number | false
+  /** Additional Fetch API options applied to every request. */
   readonly request?: Omit<RequestInit, 'body' | 'signal' | 'method'>
+  /** Custom Fetch API implementation. Defaults to `globalThis.fetch`. */
   readonly fetch?: (request: Request) => Promise<Response>
 }
 
+/** Options used to create a {@link MilkyFetch} instance. */
 export type MilkyFetchCreateOptions = Omit<MilkyFetchOptions, 'baseURL'> & {
+  /** Base URL of the Milky implementation, including any path prefix. */
   readonly baseURL: string | URL
 }
 
+/** A typed function for invoking Milky API endpoints by their protocol names. */
 export interface MilkyFetch {
-  <const T extends keyof MilkyRawEndpoints>(
+  /**
+   * Invokes a Milky API endpoint.
+   *
+   * @param name - Snake-case endpoint name from the Milky protocol.
+   * @param args - Endpoint parameters followed by optional per-request overrides.
+   * @returns The endpoint response data.
+   */
+  <const T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>(
     name: T,
     ...args: MilkyFetchParameters<T>
-  ): Promise<ReturnType<MilkyRawEndpoints[T]>>
+  ): Promise<MilkyEndpointResponse<T>>
 }
 
-type MilkyFetchParameters<T extends keyof MilkyRawEndpoints>
-  = Parameters<MilkyRawEndpoints[T]> extends [param: infer P]
-    ? [param: P, override?: MilkyFetchOptions]
-    : Parameters<MilkyRawEndpoints[T]> extends [param?: infer P]
-      ? [param?: P, override?: MilkyFetchOptions]
+type MilkyFetchParameters<T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>
+  = Parameters<MilkyRawEndpoints[T]> extends [param: unknown]
+    ? [param: ApiEndpoints[T]['request_ZodInput'], override?: MilkyFetchOptions]
+    : Parameters<MilkyRawEndpoints[T]> extends [param?: unknown]
+      ? [param?: null | undefined, override?: MilkyFetchOptions]
       : never
 
 interface MilkyApiResponse<T> {
@@ -61,7 +87,7 @@ function isMissingZodError(error: unknown, seen = new Set<unknown>()): boolean {
 }
 
 async function resolveMilkyProto(): Promise<MilkyProto | undefined> {
-  milkyProtoPromise ??= import('@/gen/zod')
+  milkyProtoPromise ??= import('@/gen/zod-api')
     .then(module => createMilkyProto(module.zodApiCategories))
     .catch((error) => {
       milkyProtoPromise = undefined
@@ -75,6 +101,13 @@ async function resolveMilkyProto(): Promise<MilkyProto | undefined> {
   return milkyProtoPromise
 }
 
+/**
+ * Creates a typed, low-level Milky API caller.
+ *
+ * @param options - Default connection, validation, and request options.
+ * @returns A function that invokes endpoints by their snake-case protocol names.
+ * @throws If no Fetch API implementation is available.
+ */
 export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
   if (options.fetch == null && globalThis.fetch == null) {
     throw new Error('milky: fetch is not provided')
@@ -82,16 +115,16 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
 
   const defaultFetch = options.fetch ?? globalThis.fetch.bind(globalThis)
 
-  return async function fetch<T extends keyof MilkyRawEndpoints>(
+  return async function fetch<T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>(
     name: T,
     ...args: MilkyFetchParameters<T>
-  ): Promise<ReturnType<MilkyRawEndpoints[T]>> {
+  ): Promise<MilkyEndpointResponse<T>> {
     let [params, override] = args as [unknown, MilkyFetchOptions | undefined]
-    const strict = override?.strict ?? options.strict ?? true
+    const zod = override?.zod ?? options.zod ?? true
     let paramStruct: MilkyProtoStruct | null | undefined
     let responseStruct: MilkyProtoStruct | null | undefined
 
-    if (strict) {
+    if (zod) {
       if (!rawEndpointNames.has(String(name))) {
         throw new Error(`milky: unknown endpoint ${String(name)}`)
       }
@@ -102,7 +135,7 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       }
     }
 
-    if (strict && paramStruct != null) {
+    if (zod && paramStruct != null) {
       const paramParseResult = await paramStruct.safeParseAsync(params)
 
       if (!paramParseResult.success) {
@@ -167,10 +200,10 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       },
     )
 
-    let payload: MilkyApiResponse<ReturnType<MilkyRawEndpoints[T]>>
+    let payload: MilkyApiResponse<MilkyEndpointResponse<T>>
 
     try {
-      payload = await response.json() as MilkyApiResponse<ReturnType<MilkyRawEndpoints[T]>>
+      payload = await response.json() as MilkyApiResponse<MilkyEndpointResponse<T>>
     }
     catch (error) {
       throw new Error(`milky: failed to parse response for ${String(name)}`, { cause: error })
@@ -180,8 +213,8 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       throw new Error(payload.message ?? `milky: invoke ${String(name)} failed: ${payload.message} (${payload.retcode})`)
     }
 
-    if (!strict || responseStruct == null) {
-      return payload.data as ReturnType<MilkyRawEndpoints[T]>
+    if (!zod || responseStruct == null) {
+      return payload.data as MilkyEndpointResponse<T>
     }
 
     const responseParseResult = await responseStruct.safeParseAsync(payload.data)
@@ -190,6 +223,6 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       throw new Error(`milky: failed to parse response for ${String(name)}: ${responseParseResult.error.message}`)
     }
 
-    return responseParseResult.data as ReturnType<MilkyRawEndpoints[T]>
+    return responseParseResult.data as MilkyEndpointResponse<T>
   }
 }

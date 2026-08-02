@@ -1,24 +1,15 @@
 import type { MilkyFetch, MilkyFetchCreateOptions, MilkyFetchOptions } from '@/client/fetch'
-import type { MilkyEventSource, MilkyEventSourceOptions } from '@/events'
-import type { MilkyEventSourceConnectionKind } from '@/events/source'
-import type { MilkyApiCategories, MilkyCamelCase, MilkyClientEndpointNames, MilkyRawEndpoints } from '@/types'
+import type { ApiCategories, ApiEndpoints } from '@/gen/types'
+import type { MilkyCamelCase, MilkyClientEndpointNames, MilkyEndpointResponse, MilkyRawEndpoints } from '@/types'
 import { createMilkyFetch } from '@/client/fetch'
-import { createMilkyEventSource } from '@/events'
 import { clientEndpointNames } from '@/types'
 
 function createProxy(options: MilkyFetchCreateOptions): any {
   const milkyFetch = createMilkyFetch(options)
-  const event = (kind?: MilkyEventSourceConnectionKind, eventOptions?: MilkyEventSourceOptions) =>
-    createMilkyEventSource(kind ?? 'websocket', {
-      ...eventOptions,
-      baseURL: options.baseURL,
-      token: eventOptions?.token ?? options.token,
-    })
 
   const cachedEndpoints = new Map<keyof MilkyClientEndpointNames, any>()
   return new Proxy({
     fetch: milkyFetch,
-    event,
   }, {
     get(target, prop) {
       if (!Object.hasOwn(clientEndpointNames, prop)) {
@@ -64,27 +55,38 @@ function createProxy(options: MilkyFetchCreateOptions): any {
   })
 }
 
+/** A category-based, camel-case client for all Milky API endpoints. */
 export type MilkyClient = {
+  /** Low-level endpoint caller configured with the same defaults as this client. */
   readonly fetch: MilkyFetch
-  readonly event: (kind?: MilkyEventSourceConnectionKind, options?: MilkyEventSourceOptions) => MilkyEventSource
 } & {
-  readonly [K in keyof MilkyApiCategories]: {
-    readonly [E in keyof MilkyApiCategories[K]['apis'] as MilkyCamelCase<E & string>]:
-    E extends keyof MilkyRawEndpoints
-      ? (...params: MilkyClientMethodParameters<E>) => Promise<ReturnType<MilkyRawEndpoints[E]>>
+  readonly [K in keyof ApiCategories]: {
+    readonly [E in keyof ApiCategories[K] as MilkyCamelCase<E & string>]:
+    E extends keyof MilkyRawEndpoints & keyof ApiEndpoints
+      ? (...params: MilkyClientMethodParameters<E>) => Promise<MilkyEndpointResponse<E>>
       : never
   } & {
+    /** Snake-case Milky API category name. */
     readonly name: K
   } & {}
 } & {}
 
-type MilkyClientMethodParameters<T extends keyof MilkyRawEndpoints>
-  = Parameters<MilkyRawEndpoints[T]> extends [param: infer P]
-    ? [param: P, override?: MilkyFetchOptions]
-    : Parameters<MilkyRawEndpoints[T]> extends [param?: infer P]
-      ? [param?: P, override?: MilkyFetchOptions]
+type MilkyClientMethodParameters<T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>
+  = Parameters<MilkyRawEndpoints[T]> extends [param: unknown]
+    ? [param: ApiEndpoints[T]['request_ZodInput'], override?: MilkyFetchOptions]
+    : Parameters<MilkyRawEndpoints[T]> extends [param?: unknown]
+      ? [param?: null | undefined, override?: MilkyFetchOptions]
       : never
 
+/**
+ * Creates a typed Milky client grouped by API category.
+ *
+ * Endpoint names are converted from snake case to camel case. The original
+ * endpoint names remain available through {@link MilkyClient.fetch}.
+ *
+ * @param options - Default connection, validation, and request options.
+ * @returns A category-based Milky API client.
+ */
 export function createMilkyClient(options: MilkyFetchCreateOptions): MilkyClient {
   return createProxy(options)
 }

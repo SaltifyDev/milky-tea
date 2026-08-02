@@ -1,43 +1,12 @@
 import type { MilkyFetchOptions } from '@/client/fetch'
-import type { MilkyEventSourceOptions } from '@/events'
-import type { MilkyEventSourceConnectionKind } from '@/events/source'
-import type { QuitGroupInput } from '@/index'
-import { afterEach, expect, expectTypeOf, it, vi } from 'vitest'
+import type {
+  QuitGroupInput_ZodInput,
+  SendPrivateMessageInput_ZodInput,
+  SendPrivateMessageOutput,
+  SetGroupEssenceMessageInput_ZodInput,
+} from '@/index'
+import { expect, expectTypeOf, it, vi } from 'vitest'
 import { createMilkyClient } from '@/client/endpoint'
-import { onceEvent, waitFor } from './helpers/async'
-import { FakeEventSource, FakeWebSocket } from './helpers/transports'
-
-const { fallbackEventSourceUrls } = vi.hoisted(() => ({
-  fallbackEventSourceUrls: [] as string[],
-}))
-
-vi.mock('eventsource', () => ({
-  EventSource: class extends EventTarget {
-    readonly CONNECTING = 0
-    readonly OPEN = 1
-    readonly CLOSED = 2
-
-    readyState = this.CONNECTING
-
-    constructor(readonly url: string | URL) {
-      super()
-      fallbackEventSourceUrls.push(String(url))
-    }
-
-    close(): void {
-      this.readyState = this.CLOSED
-    }
-  },
-}))
-
-const originalEventSource = globalThis.EventSource
-const originalWebSocket = globalThis.WebSocket
-
-afterEach(() => {
-  fallbackEventSourceUrls.length = 0
-  globalThis.EventSource = originalEventSource
-  globalThis.WebSocket = originalWebSocket
-})
 
 it('proxies grouped client methods to API endpoints', async () => {
   const fetchMock = vi.fn(async (request: Request) => {
@@ -127,175 +96,6 @@ it('forwards params and per-request overrides through grouped client methods', a
   expect(overrideFetch).toHaveBeenCalledOnce()
 })
 
-it('adds token query when creating sse event urls', async () => {
-  const urls: string[] = []
-
-  globalThis.EventSource = class extends FakeEventSource {
-    constructor(url: string | URL) {
-      super(url)
-      urls.push(String(url))
-    }
-  } as unknown as typeof EventSource
-
-  const client = createMilkyClient({
-    baseURL: 'https://example.com/base',
-    token: 'root-token',
-    fetch: vi.fn(),
-  })
-
-  const source = await client.event('sse')
-
-  await waitFor(() => urls.length === 1)
-  expect(urls).toEqual(['https://example.com/event?access_token=root-token'])
-
-  source.close()
-})
-
-it('allows per-event token overrides when creating sse event urls', async () => {
-  const urls: string[] = []
-
-  globalThis.EventSource = class extends FakeEventSource {
-    constructor(url: string | URL) {
-      super(url)
-      urls.push(String(url))
-    }
-  } as unknown as typeof EventSource
-
-  const client = createMilkyClient({
-    baseURL: 'https://example.com/base',
-    token: 'root-token',
-    fetch: vi.fn(),
-  })
-
-  const source = await client.event('sse', {
-    token: 'event-token',
-  })
-
-  await waitFor(() => urls.length === 1)
-  expect(urls).toEqual(['https://example.com/event?access_token=event-token'])
-
-  source.close()
-})
-
-it('adds token query when creating websocket event urls', async () => {
-  const urls: string[] = []
-
-  globalThis.WebSocket = class extends FakeWebSocket {
-    constructor(url: string | URL) {
-      super(url)
-      urls.push(String(url))
-    }
-  } as unknown as typeof WebSocket
-
-  const client = createMilkyClient({
-    baseURL: 'https://example.com/base',
-    token: 'root-token',
-    fetch: vi.fn(),
-  })
-
-  const source = await client.event('websocket')
-
-  await waitFor(() => urls.length === 1)
-  expect(urls).toEqual(['https://example.com/event?access_token=root-token'])
-
-  source.close()
-})
-
-it('reports unsupported auto event kind through the client wrapper', async () => {
-  const websocketUrls: string[] = []
-  const sseUrls: string[] = []
-
-  globalThis.WebSocket = class extends FakeWebSocket {
-    constructor(url: string | URL) {
-      super(url)
-      websocketUrls.push(String(url))
-      throw new Error('unexpected websocket')
-    }
-  } as unknown as typeof WebSocket
-
-  globalThis.EventSource = class extends FakeEventSource {
-    constructor(url: string | URL) {
-      super(url)
-      sseUrls.push(String(url))
-    }
-  } as unknown as typeof EventSource
-
-  const client = createMilkyClient({
-    baseURL: 'https://example.com/base',
-    token: 'root-token',
-    fetch: vi.fn(),
-  })
-
-  // @ts-expect-error auto is no longer supported
-  const source = await client.event('auto', {
-    token: 'event-token',
-    timeout: 25,
-    reconnect: false,
-  })
-
-  const error = await onceEvent<Error>(source, 'error')
-  expect(error.message).toBe('milky: event source kind "auto" is no longer supported; use "websocket" or "sse"')
-  await waitFor(() => source.readyState === source.CLOSED)
-  expect(websocketUrls).toEqual([])
-  expect(sseUrls).toEqual([])
-
-  source.close()
-})
-
-it('defaults client event kind to websocket when omitted', async () => {
-  const websocketUrls: string[] = []
-  const sseUrls: string[] = []
-
-  globalThis.WebSocket = class extends FakeWebSocket {
-    constructor(url: string | URL) {
-      super(url)
-      websocketUrls.push(String(url))
-      queueMicrotask(() => {
-        this.dispatchEvent(new Event('error'))
-        this.close()
-      })
-    }
-  } as unknown as typeof WebSocket
-
-  globalThis.EventSource = class extends FakeEventSource {
-    constructor(url: string | URL) {
-      super(url)
-      sseUrls.push(String(url))
-    }
-  } as unknown as typeof EventSource
-
-  const client = createMilkyClient({
-    baseURL: 'https://example.com/base',
-    token: 'root-token',
-    fetch: vi.fn(),
-  })
-
-  const source = client.event()
-
-  await waitFor(() => websocketUrls.length === 1)
-  expect(websocketUrls).toEqual(['https://example.com/event?access_token=root-token'])
-  expect(sseUrls).toEqual([])
-
-  source.close()
-})
-
-it('falls back to peer eventsource when global EventSource is unavailable', async () => {
-  globalThis.EventSource = undefined as unknown as typeof EventSource
-
-  const client = createMilkyClient({
-    baseURL: 'https://example.com/base',
-    token: 'root-token',
-    fetch: vi.fn(),
-  })
-
-  const source = await client.event('sse')
-
-  await waitFor(() => fallbackEventSourceUrls.length === 1)
-  expect(fallbackEventSourceUrls).toEqual(['https://example.com/event?access_token=root-token'])
-
-  source.close()
-})
-
 it('exposes grouped client methods with optional override options', () => {
   const client = createMilkyClient({
     baseURL: 'https://example.com',
@@ -307,6 +107,10 @@ it('exposes grouped client methods with optional override options', () => {
   })
 
   expectTypeOf(client.system.getLoginInfo).parameters.toEqualTypeOf<[(undefined | null)?, MilkyFetchOptions?]>()
-  expectTypeOf(client.group.quitGroup).parameters.toEqualTypeOf<[QuitGroupInput, MilkyFetchOptions?]>()
-  expectTypeOf(client.event).parameters.toEqualTypeOf<[(MilkyEventSourceConnectionKind | undefined)?, MilkyEventSourceOptions?]>()
+  expectTypeOf(client.group.quitGroup).parameters.toEqualTypeOf<[QuitGroupInput_ZodInput, MilkyFetchOptions?]>()
+  expectTypeOf(client.group.setGroupEssenceMessage).parameters.toEqualTypeOf<[SetGroupEssenceMessageInput_ZodInput, MilkyFetchOptions?]>()
+  expectTypeOf(client.message.sendPrivateMessage).parameters.toEqualTypeOf<[SendPrivateMessageInput_ZodInput, MilkyFetchOptions?]>()
+  expectTypeOf(client.group.quitGroup).returns.toEqualTypeOf<Promise<void>>()
+  expectTypeOf(client.message.sendPrivateMessage).returns.toEqualTypeOf<Promise<SendPrivateMessageOutput>>()
+  expect(client).not.toHaveProperty('event')
 })
