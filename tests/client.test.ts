@@ -1,5 +1,10 @@
 import type { MilkyFetchOptions } from '@/client/fetch'
-import type { QuitGroupInput } from '@/index'
+import type {
+  QuitGroupInput_ZodInput,
+  SendPrivateMessageInput_ZodInput,
+  SendPrivateMessageOutput,
+  SetGroupEssenceMessageInput_ZodInput,
+} from '@/index'
 import { expect, expectTypeOf, it, vi } from 'vitest'
 import { createMilkyClient } from '@/client/endpoint'
 
@@ -102,6 +107,9 @@ it('exposes grouped client methods with optional override options', () => {
   })
 
   expectTypeOf(client.system.getLoginInfo).parameters.toEqualTypeOf<[(undefined | null)?, MilkyFetchOptions?]>()
-  expectTypeOf(client.group.quitGroup).parameters.toEqualTypeOf<[QuitGroupInput, MilkyFetchOptions?]>()
+  expectTypeOf(client.group.quitGroup).parameters.toEqualTypeOf<[QuitGroupInput_ZodInput, MilkyFetchOptions?]>()
+  expectTypeOf(client.group.setGroupEssenceMessage).parameters.toEqualTypeOf<[SetGroupEssenceMessageInput_ZodInput, MilkyFetchOptions?]>()
+  expectTypeOf(client.message.sendPrivateMessage).parameters.toEqualTypeOf<[SendPrivateMessageInput_ZodInput, MilkyFetchOptions?]>()
+  expectTypeOf(client.message.sendPrivateMessage).returns.toEqualTypeOf<Promise<SendPrivateMessageOutput>>()
   expect(client).not.toHaveProperty('event')
 })

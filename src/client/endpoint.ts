@@ -1,5 +1,6 @@
 import type { MilkyFetch, MilkyFetchCreateOptions, MilkyFetchOptions } from '@/client/fetch'
-import type { MilkyApiCategories, MilkyCamelCase, MilkyClientEndpointNames, MilkyRawEndpoints } from '@/types'
+import type { ApiCategories, ApiEndpoints } from '@/gen/types'
+import type { MilkyCamelCase, MilkyClientEndpointNames, MilkyRawEndpoints } from '@/types'
 import { createMilkyFetch } from '@/client/fetch'
 import { clientEndpointNames } from '@/types'
 
@@ -57,21 +58,21 @@ function createProxy(options: MilkyFetchCreateOptions): any {
 export type MilkyClient = {
   readonly fetch: MilkyFetch
 } & {
-  readonly [K in keyof MilkyApiCategories]: {
-    readonly [E in keyof MilkyApiCategories[K]['apis'] as MilkyCamelCase<E & string>]:
-    E extends keyof MilkyRawEndpoints
-      ? (...params: MilkyClientMethodParameters<E>) => Promise<ReturnType<MilkyRawEndpoints[E]>>
+  readonly [K in keyof ApiCategories]: {
+    readonly [E in keyof ApiCategories[K] as MilkyCamelCase<E & string>]:
+    E extends keyof MilkyRawEndpoints & keyof ApiEndpoints
+      ? (...params: MilkyClientMethodParameters<E>) => Promise<ApiEndpoints[E]['response']>
       : never
   } & {
     readonly name: K
   } & {}
 } & {}
 
-type MilkyClientMethodParameters<T extends keyof MilkyRawEndpoints>
-  = Parameters<MilkyRawEndpoints[T]> extends [param: infer P]
-    ? [param: P, override?: MilkyFetchOptions]
-    : Parameters<MilkyRawEndpoints[T]> extends [param?: infer P]
-      ? [param?: P, override?: MilkyFetchOptions]
+type MilkyClientMethodParameters<T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>
+  = Parameters<MilkyRawEndpoints[T]> extends [param: unknown]
+    ? [param: ApiEndpoints[T]['request_ZodInput'], override?: MilkyFetchOptions]
+    : Parameters<MilkyRawEndpoints[T]> extends [param?: unknown]
+      ? [param?: null | undefined, override?: MilkyFetchOptions]
       : never
 
 export function createMilkyClient(options: MilkyFetchCreateOptions): MilkyClient {
