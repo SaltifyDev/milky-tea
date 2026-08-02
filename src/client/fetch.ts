@@ -1,10 +1,11 @@
+import type { ApiEndpoints } from '@/gen/types'
 import type { MilkyProto, MilkyProtoStruct, MilkyRawEndpoints } from '@/types'
 import { createMilkyProto, rawEndpointNames } from '@/types'
 import { joinURL, withTimeout } from '@/utils'
 
 export interface MilkyFetchOptions {
   readonly baseURL?: string | URL
-  readonly strict?: boolean
+  readonly zod?: boolean
   readonly token?: string
   readonly timeout?: number | false
   readonly request?: Omit<RequestInit, 'body' | 'signal' | 'method'>
@@ -16,17 +17,17 @@ export type MilkyFetchCreateOptions = Omit<MilkyFetchOptions, 'baseURL'> & {
 }
 
 export interface MilkyFetch {
-  <const T extends keyof MilkyRawEndpoints>(
+  <const T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>(
     name: T,
     ...args: MilkyFetchParameters<T>
-  ): Promise<ReturnType<MilkyRawEndpoints[T]>>
+  ): Promise<ApiEndpoints[T]['response']>
 }
 
-type MilkyFetchParameters<T extends keyof MilkyRawEndpoints>
-  = Parameters<MilkyRawEndpoints[T]> extends [param: infer P]
-    ? [param: P, override?: MilkyFetchOptions]
-    : Parameters<MilkyRawEndpoints[T]> extends [param?: infer P]
-      ? [param?: P, override?: MilkyFetchOptions]
+type MilkyFetchParameters<T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>
+  = Parameters<MilkyRawEndpoints[T]> extends [param: unknown]
+    ? [param: ApiEndpoints[T]['request_ZodInput'], override?: MilkyFetchOptions]
+    : Parameters<MilkyRawEndpoints[T]> extends [param?: unknown]
+      ? [param?: null | undefined, override?: MilkyFetchOptions]
       : never
 
 interface MilkyApiResponse<T> {
@@ -82,16 +83,16 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
 
   const defaultFetch = options.fetch ?? globalThis.fetch.bind(globalThis)
 
-  return async function fetch<T extends keyof MilkyRawEndpoints>(
+  return async function fetch<T extends keyof MilkyRawEndpoints & keyof ApiEndpoints>(
     name: T,
     ...args: MilkyFetchParameters<T>
-  ): Promise<ReturnType<MilkyRawEndpoints[T]>> {
+  ): Promise<ApiEndpoints[T]['response']> {
     let [params, override] = args as [unknown, MilkyFetchOptions | undefined]
-    const strict = override?.strict ?? options.strict ?? true
+    const zod = override?.zod ?? options.zod ?? true
     let paramStruct: MilkyProtoStruct | null | undefined
     let responseStruct: MilkyProtoStruct | null | undefined
 
-    if (strict) {
+    if (zod) {
       if (!rawEndpointNames.has(String(name))) {
         throw new Error(`milky: unknown endpoint ${String(name)}`)
       }
@@ -102,7 +103,7 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       }
     }
 
-    if (strict && paramStruct != null) {
+    if (zod && paramStruct != null) {
       const paramParseResult = await paramStruct.safeParseAsync(params)
 
       if (!paramParseResult.success) {
@@ -167,10 +168,10 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       },
     )
 
-    let payload: MilkyApiResponse<ReturnType<MilkyRawEndpoints[T]>>
+    let payload: MilkyApiResponse<ApiEndpoints[T]['response']>
 
     try {
-      payload = await response.json() as MilkyApiResponse<ReturnType<MilkyRawEndpoints[T]>>
+      payload = await response.json() as MilkyApiResponse<ApiEndpoints[T]['response']>
     }
     catch (error) {
       throw new Error(`milky: failed to parse response for ${String(name)}`, { cause: error })
@@ -180,8 +181,8 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       throw new Error(payload.message ?? `milky: invoke ${String(name)} failed: ${payload.message} (${payload.retcode})`)
     }
 
-    if (!strict || responseStruct == null) {
-      return payload.data as ReturnType<MilkyRawEndpoints[T]>
+    if (!zod || responseStruct == null) {
+      return payload.data as ApiEndpoints[T]['response']
     }
 
     const responseParseResult = await responseStruct.safeParseAsync(payload.data)
@@ -190,6 +191,6 @@ export function createMilkyFetch(options: MilkyFetchCreateOptions): MilkyFetch {
       throw new Error(`milky: failed to parse response for ${String(name)}: ${responseParseResult.error.message}`)
     }
 
-    return responseParseResult.data as ReturnType<MilkyRawEndpoints[T]>
+    return responseParseResult.data as ApiEndpoints[T]['response']
   }
 }

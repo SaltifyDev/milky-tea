@@ -72,14 +72,20 @@ import { createMilkyFetch } from '@saltify/milky-tea'
 
 const milkyFetch = createMilkyFetch({
   baseURL: 'https://milky.example.com',
-  strict: false,
+  zod: false,
 })
 
 const login = await milkyFetch('get_login_info', undefined)
 console.log(login.uin)
 ```
 
-`strict` 默认为 `true`。关闭后会跳过请求参数和响应数据的 zod 校验；也可以在单次请求的 override 里单独设置。
+`zod` 默认为 `true`。关闭后会跳过请求参数和响应数据的 Zod 校验；也可以在单次请求的 override 里单独设置。
+
+## 示例
+
+- [`examples/client.ts`](./examples/client.ts)：收到好友私聊事件后，将其中的文本消息 echo 给发送者
+- [`examples/fetch.ts`](./examples/fetch.ts)：使用底层 `createMilkyFetch` 调用原始 endpoint
+- [`examples/event.ts`](./examples/event.ts)：解析事件并通过 `event_type` 缩窄事件数据类型
 
 ## 开发
 
